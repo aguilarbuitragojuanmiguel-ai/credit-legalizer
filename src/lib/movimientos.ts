@@ -17,6 +17,7 @@ export type Movimiento = {
   moneda: string;
   valor_original: number | null;
   trm: number | null;
+  soporte_listo: boolean;
   created_at: string;
 };
 
