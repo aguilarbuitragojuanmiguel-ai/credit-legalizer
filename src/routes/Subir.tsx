@@ -628,7 +628,7 @@ function ModoSemana() {
 
 type FilaLegal = {
   key: string;
-  archivoKey: string;
+  archivoKeys: string[];
   archivoNombre: string;
   tc: string;
   fecha: string;
@@ -636,13 +636,38 @@ type FilaLegal = {
   valor: number;
   cruceId: string;
   candidatos: Movimiento[];
+  grupo: number; // 1 = fila individual, >1 = N registros del Excel fusionados (gasto compartido)
 };
+
+type Sugerencia = {
+  id: string;
+  filaKeys: string[];
+  pendienteId: string;
+  pendienteDesc: string;
+  pendienteFecha: string;
+  pendienteValor: number;
+  valorSuma: number;
+  fecha: string;
+  proveedor: string;
+  tc: string;
+};
+
+function normTexto(v: string): string {
+  return v
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
 function ModoLegalizacion() {
   const qc = useQueryClient();
   const { data: movs } = useQuery(movimientosQuery);
   const [archivos, setArchivos] = useState<Array<{ key: string; file: File }>>([]);
   const [filas, setFilas] = useState<FilaLegal[]>([]);
+  const [sugerencias, setSugerencias] = useState<Sugerencia[]>([]);
+  const [descartadas, setDescartadas] = useState<Set<string>>(new Set());
   const [aviso, setAviso] = useState<string | null>(null);
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
@@ -673,7 +698,7 @@ function ModoLegalizacion() {
       if (libre) usados.add(libre.id);
       return {
         key: nextKey(),
-        archivoKey: g.archivoKey,
+        archivoKeys: [g.archivoKey],
         archivoNombre: g.archivoNombre,
         tc,
         fecha: g.fecha,
@@ -681,8 +706,60 @@ function ModoLegalizacion() {
         valor: g.valor,
         cruceId: libre?.id ?? "",
         candidatos: cands,
+        grupo: 1,
       };
     });
+  }
+
+  // Entre las filas SIN cruce individual, busca grupos (misma TC + fecha + proveedor)
+  // cuya SUMA coincida con un pendiente todavía libre. No las fusiona sola: las deja
+  // como sugerencia para que el usuario acepte o rechace (evita cruces ambiguos, p.ej.
+  // dos compras iguales del mismo día que en realidad son gastos distintos).
+  function recalcularSugerencias(
+    filasActuales: FilaLegal[],
+    descartadasActuales: Set<string>,
+  ): Sugerencia[] {
+    const sinMatch = filasActuales.filter((f) => !f.cruceId);
+    const idsUsados = new Set(filasActuales.filter((f) => f.cruceId).map((f) => f.cruceId));
+
+    const grupos = new Map<string, FilaLegal[]>();
+    for (const f of sinMatch) {
+      const k = `${f.tc}|${f.fecha}|${normTexto(f.proveedor)}`;
+      const arr = grupos.get(k) ?? [];
+      arr.push(f);
+      grupos.set(k, arr);
+    }
+
+    const resultado: Sugerencia[] = [];
+    for (const grupo of grupos.values()) {
+      if (grupo.length < 2) continue;
+      const tc = grupo[0]!.tc;
+      const suma = grupo.reduce((s, f) => s + f.valor, 0);
+      const candidato = pendientes
+        .filter((m) => m.tc === tc && !idsUsados.has(m.id) && Math.abs(Number(m.valor) - suma) <= 1000)
+        .sort(
+          (a, b) =>
+            Math.abs(+new Date(a.fecha) - +new Date(grupo[0]!.fecha)) -
+            Math.abs(+new Date(b.fecha) - +new Date(grupo[0]!.fecha)),
+        )[0];
+      if (!candidato) continue;
+      const filaKeys = grupo.map((f) => f.key).sort();
+      const id = `${filaKeys.join(",")}|${candidato.id}`;
+      if (descartadasActuales.has(id)) continue;
+      resultado.push({
+        id,
+        filaKeys,
+        pendienteId: candidato.id,
+        pendienteDesc: candidato.descripcion,
+        pendienteFecha: candidato.fecha,
+        pendienteValor: Number(candidato.valor),
+        valorSuma: suma,
+        fecha: grupo[0]!.fecha,
+        proveedor: grupo[0]!.proveedor,
+        tc,
+      });
+    }
+    return resultado;
   }
 
   async function onArchivos(files: File[]) {
@@ -709,6 +786,7 @@ function ModoLegalizacion() {
       }
     }
     setArchivos(seleccionados);
+    setDescartadas(new Set());
     if (gastos.length === 0) {
       setAviso(
         errores.length
@@ -716,8 +794,11 @@ function ModoLegalizacion() {
           : "No se encontraron gastos legalizados en los archivos. Revisa el formato.",
       );
       setFilas([]);
+      setSugerencias([]);
     } else {
-      setFilas(construirFilas(gastos));
+      const nuevasFilas = construirFilas(gastos);
+      setFilas(nuevasFilas);
+      setSugerencias(recalcularSugerencias(nuevasFilas, new Set()));
       const sinTc = gastos.filter((g) => !g.tc).length;
       setAviso(
         `${seleccionados.length} archivo${seleccionados.length === 1 ? "" : "s"} procesado${seleccionados.length === 1 ? "" : "s"}. ${gastos.length} gastos leídos.` +
@@ -729,13 +810,46 @@ function ModoLegalizacion() {
   }
 
   function cambiarTc(key: string, tc: string) {
-    setFilas((prev) =>
-      prev.map((f) => {
+    setFilas((prev) => {
+      const next = prev.map((f) => {
         if (f.key !== key) return f;
         const cands = candidatosPara(tc, f);
         return { ...f, tc, candidatos: cands, cruceId: cands[0]?.id ?? "" };
-      }),
-    );
+      });
+      setSugerencias(recalcularSugerencias(next, descartadas));
+      return next;
+    });
+  }
+
+  function aceptarSugerencia(s: Sugerencia) {
+    setFilas((prev) => {
+      const miembros = prev.filter((f) => s.filaKeys.includes(f.key));
+      const resto = prev.filter((f) => !s.filaKeys.includes(f.key));
+      const fusionada: FilaLegal = {
+        key: nextKey(),
+        archivoKeys: [...new Set(miembros.flatMap((f) => f.archivoKeys))],
+        archivoNombre: miembros[0]?.archivoNombre ?? "",
+        tc: s.tc,
+        fecha: s.fecha,
+        proveedor: s.proveedor,
+        valor: s.valorSuma,
+        cruceId: s.pendienteId,
+        candidatos: pendientes.filter((m) => m.id === s.pendienteId),
+        grupo: miembros.length,
+      };
+      const next = [...resto, fusionada];
+      setSugerencias(recalcularSugerencias(next, descartadas));
+      return next;
+    });
+  }
+
+  function rechazarSugerencia(s: Sugerencia) {
+    setDescartadas((prev) => {
+      const next = new Set(prev);
+      next.add(s.id);
+      return next;
+    });
+    setSugerencias((prev) => prev.filter((x) => x.id !== s.id));
   }
 
   async function confirmar() {
@@ -744,8 +858,9 @@ function ModoLegalizacion() {
     setGuardando(true);
     try {
       const urls = new Map<string, string>();
+      const keysNecesarios = new Set(cruces.flatMap((f) => f.archivoKeys));
       for (const archivo of archivos) {
-        if (!cruces.some((f) => f.archivoKey === archivo.key)) continue;
+        if (!keysNecesarios.has(archivo.key)) continue;
         const { url } = await subirArchivoLegalizacion(
           `${hoyISO()}_${archivo.file.name}`,
           archivo.file,
@@ -754,7 +869,7 @@ function ModoLegalizacion() {
       }
 
       for (const f of cruces) {
-        const url = urls.get(f.archivoKey);
+        const url = f.archivoKeys.map((k) => urls.get(k)).find(Boolean);
         if (!url) continue;
         await actualizarMovimiento(f.cruceId, {
           estado: "Legalizado",
@@ -765,6 +880,7 @@ function ModoLegalizacion() {
       }
       await qc.invalidateQueries({ queryKey: movimientosQuery.queryKey });
       setFilas([]);
+      setSugerencias([]);
       setArchivos([]);
       setAviso(`Se legalizaron ${cruces.length} movimientos y se guardaron sus soportes.`);
     } catch (e) {
@@ -794,6 +910,38 @@ function ModoLegalizacion() {
           </p>
         ) : null}
       </Card>
+
+      {sugerencias.length > 0 ? (
+        <Card title="Posibles gastos compartidos (revisa y confirma)">
+          <div className="space-y-3">
+            {sugerencias.map((s) => (
+              <div
+                key={s.id}
+                className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-[13px]"
+              >
+                <p>
+                  <strong>{s.filaKeys.length} filas</strong> de {formatFecha(s.fecha)} ·{" "}
+                  {s.proveedor || "—"} (TC {s.tc}) suman{" "}
+                  <strong>{formatCOP(s.valorSuma)}</strong>, que coincide con el pendiente{" "}
+                  <strong>
+                    {formatFecha(s.pendienteFecha)} · {s.pendienteDesc} ·{" "}
+                    {formatCOP(s.pendienteValor)}
+                  </strong>
+                  . ¿Es un gasto compartido entre varias personas?
+                </p>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" className={btnPrimary} onClick={() => aceptarSugerencia(s)}>
+                    Sí, es el mismo gasto
+                  </button>
+                  <button type="button" className={btnGhost} onClick={() => rechazarSugerencia(s)}>
+                    No, son gastos distintos
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      ) : null}
 
       {filas.length > 0 ? (
         <Card title="2. Confirma el cruce contra pendientes">
@@ -828,7 +976,14 @@ function ModoLegalizacion() {
                       {f.archivoNombre}
                     </td>
                     <td className="px-2 py-1.5 tabular-nums">{formatFecha(f.fecha)}</td>
-                    <td className="px-2 py-1.5">{f.proveedor || "—"}</td>
+                    <td className="px-2 py-1.5">
+                      {f.proveedor || "—"}
+                      {f.grupo > 1 ? (
+                        <span className="ml-1 rounded-full bg-accent px-1.5 py-0.5 text-[10.5px] font-semibold text-accent-foreground">
+                          {f.grupo} personas
+                        </span>
+                      ) : null}
+                    </td>
                     <td className="px-2 py-1.5 text-right tabular-nums">{formatCOP(f.valor)}</td>
                     <td className="px-2 py-1.5">
                       {f.candidatos.length === 0 ? (
