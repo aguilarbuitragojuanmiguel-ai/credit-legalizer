@@ -20,6 +20,7 @@ export default function Movimientos() {
 
   const [tcFiltro, setTcFiltro] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState("");
+  const [soporteFiltro, setSoporteFiltro] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [seleccion, setSeleccion] = useState<Record<string, boolean>>({});
 
@@ -32,6 +33,9 @@ export default function Movimientos() {
     (m) =>
       (!tcFiltro || m.tc === tcFiltro) &&
       (!estadoFiltro || m.estado === estadoFiltro) &&
+      (!soporteFiltro ||
+        (soporteFiltro === "con" && m.soporte_listo) ||
+        (soporteFiltro === "sin" && !m.soporte_listo)) &&
       (!busqueda || m.descripcion.toLowerCase().includes(busqueda.toLowerCase())),
   );
 
@@ -57,6 +61,12 @@ export default function Movimientos() {
       setSeleccion({});
       void invalidar();
     },
+  });
+
+  const cambiarSoporte = useMutation({
+    mutationFn: async ({ id, valor }: { id: string; valor: boolean }) =>
+      actualizarMovimiento(id, { soporte_listo: valor }),
+    onSuccess: invalidar,
   });
 
   const idsSeleccionados = Object.keys(seleccion).filter((id) => seleccion[id]);
@@ -98,6 +108,15 @@ export default function Movimientos() {
             <option value="Legalizado">Legalizado</option>
             <option value="N/A">N/A</option>
           </select>
+          <select
+            className={inputCls}
+            value={soporteFiltro}
+            onChange={(e) => setSoporteFiltro(e.target.value)}
+          >
+            <option value="">Soporte: todos</option>
+            <option value="con">Con soporte listo</option>
+            <option value="sin">Sin soporte</option>
+          </select>
           <input
             className={`${inputCls} min-w-[220px] flex-1`}
             placeholder="Buscar en la descripción…"
@@ -137,7 +156,8 @@ export default function Movimientos() {
                   <th className="px-3 py-2 text-right font-semibold">Valor</th>
                   <th className="px-3 py-2 font-semibold">Tipo</th>
                   <th className="px-3 py-2 font-semibold">Estado</th>
-                  <th className="px-3 py-2 font-semibold">Soporte</th>
+                  <th className="w-16 px-3 py-2 text-center font-semibold">Soporte</th>
+                  <th className="px-3 py-2 font-semibold">Archivo</th>
                 </tr>
               </thead>
               <tbody>
@@ -183,9 +203,23 @@ export default function Movimientos() {
                           </div>
                         ) : null}
                       </td>
+                      <td className="px-3 py-2 text-center">
+                        {m.tipo === "Consumo" ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Marcar soporte listo para ${m.descripcion}`}
+                            checked={m.soporte_listo}
+                            disabled={cambiarSoporte.isPending}
+                            title="Ya tengo la factura/soporte de este gasto, aunque no lo haya legalizado todavía"
+                            onChange={(e) =>
+                              cambiarSoporte.mutate({ id: m.id, valor: e.target.checked })
+                            }
+                          />
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2">
                         {m.archivo_legalizacion_url ? (
-                          <a
+                          
                             className="text-[12.5px] font-medium text-accent-foreground underline"
                             href={m.archivo_legalizacion_url}
                             target="_blank"
