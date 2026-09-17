@@ -219,7 +219,7 @@ export default function Movimientos() {
                       </td>
                       <td className="px-3 py-2">
                         {m.archivo_legalizacion_url ? (
-                          
+                          <a
                             className="text-[12.5px] font-medium text-accent-foreground underline"
                             href={m.archivo_legalizacion_url}
                             target="_blank"
