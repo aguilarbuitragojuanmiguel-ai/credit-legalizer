@@ -36,12 +36,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const path = `${Date.now()}_${nombreParam.replace(/[^\w.\-]+/g, "_")}`;
 
+  // Nota: las secret keys nuevas de Supabase (sb_secret_...) no son JWT.
+  // Van en el header "apikey" — NO en "Authorization: Bearer", que Storage
+  // intenta validar como JWT y rechaza con error.
   const uploadRes = await fetch(
     `${env.SUPABASE_URL}/storage/v1/object/legalizaciones/${path}`,
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
         "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
       },
       body: binary,
@@ -58,7 +61,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${env.SUPABASE_SERVICE_ROLE_KEY}`,
+        apikey: env.SUPABASE_SERVICE_ROLE_KEY,
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ expiresIn: 60 * 60 * 24 * 365 * 5 }),
