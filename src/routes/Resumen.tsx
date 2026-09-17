@@ -61,6 +61,7 @@ export default function Resumen() {
 
   const consumos = movs.filter((m) => m.tipo === "Consumo");
   const pendientes = consumos.filter((m) => m.estado === "Pendiente");
+  const pendientesConSoporte = pendientes.filter((m) => m.soporte_listo);
   const legalizados = consumos.filter((m) => m.estado === "Legalizado");
   const totalPendiente = pendientes.reduce((s, m) => s + Number(m.valor), 0);
   const totalLegalizado = legalizados.reduce((s, m) => s + Number(m.valor), 0);
@@ -75,9 +76,10 @@ export default function Resumen() {
         </p>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Metric label="Tarjetas registradas" value={String(filas.length)} />
         <Metric label="Consumos pendientes" value={String(pendientes.length)} />
+        <Metric label="Con soporte, falta legalizar" value={String(pendientesConSoporte.length)} />
         <Metric label="Valor pendiente" value={formatCOP(totalPendiente)} />
         <Metric label="Valor legalizado" value={formatCOP(totalLegalizado)} />
       </div>
