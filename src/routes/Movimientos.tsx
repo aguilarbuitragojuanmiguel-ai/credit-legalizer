@@ -29,15 +29,22 @@ export default function Movimientos() {
     [movs],
   );
 
-  const filtrados = movs.filter(
-    (m) =>
-      (!tcFiltro || m.tc === tcFiltro) &&
-      (!estadoFiltro || m.estado === estadoFiltro) &&
-      (!soporteFiltro ||
-        (soporteFiltro === "con" && m.soporte_listo) ||
-        (soporteFiltro === "sin" && !m.soporte_listo)) &&
-      (!busqueda || m.descripcion.toLowerCase().includes(busqueda.toLowerCase())),
-  );
+  const filtrados = movs
+    .filter(
+      (m) =>
+        (!tcFiltro || m.tc === tcFiltro) &&
+        (!estadoFiltro || m.estado === estadoFiltro) &&
+        (!soporteFiltro ||
+          (soporteFiltro === "con" && m.soporte_listo) ||
+          (soporteFiltro === "sin" && !m.soporte_listo)) &&
+        (!busqueda || m.descripcion.toLowerCase().includes(busqueda.toLowerCase())),
+    )
+    .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha));
+
+  const totalFiltrado = filtrados.reduce((s, m) => s + Number(m.valor), 0);
+  const totalSeleccionado = movs
+    .filter((m) => seleccion[m.id])
+    .reduce((s, m) => s + Number(m.valor), 0);
 
   const invalidar = () => qc.invalidateQueries({ queryKey: movimientosQuery.queryKey });
 
@@ -84,7 +91,9 @@ export default function Movimientos() {
         >
           {legalizar.isPending
             ? "Guardando…"
-            : `Marcar como Legalizado (${idsSeleccionados.length})`}
+            : `Marcar como Legalizado (${idsSeleccionados.length})${
+                idsSeleccionados.length > 0 ? ` · ${formatCOP(totalSeleccionado)}` : ""
+              }`}
         </button>
       </div>
 
@@ -124,6 +133,10 @@ export default function Movimientos() {
             onChange={(e) => setBusqueda(e.target.value)}
           />
         </div>
+        <p className="mb-4 text-[13px] text-muted-foreground">
+          {filtrados.length} movimiento{filtrados.length === 1 ? "" : "s"} · Total:{" "}
+          <span className="font-semibold text-foreground">{formatCOP(totalFiltrado)}</span>
+        </p>
 
         {isLoading ? (
           <p className="text-muted-foreground">Cargando…</p>

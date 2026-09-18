@@ -691,10 +691,24 @@ function ModoLegalizacion() {
     gastos: Array<GastoLegalizado & { archivoKey: string; archivoNombre: string }>,
   ): FilaLegal[] {
     const usados = new Set<string>();
+
+    // Cuenta cuántas veces se repite exactamente la misma combinación
+    // tc + fecha + proveedor + valor: si aparece más de una vez, es un
+    // candidato a gasto compartido (dividido en partes iguales) y NO se
+    // le debe pre-asignar un pendiente individual — se deja libre para
+    // que la etapa de sugerencias intente agruparlo primero.
+    const conteoExacto = new Map<string, number>();
+    for (const g of gastos) {
+      const k = `${g.tc ?? ""}|${g.fecha}|${normTexto(g.proveedor)}|${g.valor}`;
+      conteoExacto.set(k, (conteoExacto.get(k) ?? 0) + 1);
+    }
+
     return gastos.map((g) => {
       const tc = g.tc ?? "";
       const cands = tc ? candidatosPara(tc, g) : [];
-      const libre = cands.find((c) => !usados.has(c.id));
+      const kExacta = `${tc}|${g.fecha}|${normTexto(g.proveedor)}|${g.valor}`;
+      const esDuplicadoExacto = (conteoExacto.get(kExacta) ?? 0) > 1;
+      const libre = esDuplicadoExacto ? undefined : cands.find((c) => !usados.has(c.id));
       if (libre) usados.add(libre.id);
       return {
         key: nextKey(),
@@ -1016,9 +1030,16 @@ function ModoLegalizacion() {
               </tbody>
             </table>
           </div>
+          <p className="mt-3 text-[13px] text-muted-foreground">
+            {filas.filter((f) => f.cruceId).length} de {filas.length} con cruce · Total a
+            legalizar:{" "}
+            <span className="font-semibold text-foreground">
+              {formatCOP(filas.filter((f) => f.cruceId).reduce((s, f) => s + f.valor, 0))}
+            </span>
+          </p>
           <button
             type="button"
-            className={`${btnPrimary} mt-4`}
+            className={`${btnPrimary} mt-3`}
             disabled={guardando || filas.filter((f) => f.cruceId).length === 0}
             onClick={() => void confirmar()}
           >
