@@ -48,12 +48,17 @@ type FilaPrev = {
   trm: number | null;
   duplicado: boolean;
   incluir: boolean;
+  posibleMismoId: string | null;
+  posibleMismoDescripcion: string | null;
 };
 
 let seq = 0;
 const nextKey = () => `f${++seq}`;
 
-/** Marca duplicados contra lo ya guardado (Doc para Davivienda, combinación exacta para el resto) */
+/** Marca duplicados contra lo ya guardado (Doc para Davivienda, combinación exacta para el resto).
+ *  Además, si no es duplicado exacto pero existe un movimiento guardado con la MISMA TC, fecha
+ *  y valor (aunque la descripción sea distinta — típico de "COMPRA" que luego carga el nombre
+ *  real), lo deja marcado como posible mismo movimiento para que el usuario confirme. */
 function marcarDuplicados(filas: FilaPrev[], existentes: Movimiento[]): FilaPrev[] {
   const docs = new Set(
     existentes.filter((m) => m.doc).map((m) => `${m.tc}|${m.doc}`),
@@ -62,6 +67,13 @@ function marcarDuplicados(filas: FilaPrev[], existentes: Movimiento[]): FilaPrev
   for (const m of existentes) {
     const k = `${m.tc}|${m.fecha}|${Math.round(Number(m.valor))}|${m.descripcion.trim().toUpperCase()}`;
     conteo.set(k, (conteo.get(k) ?? 0) + 1);
+  }
+  const porValor = new Map<string, Movimiento[]>();
+  for (const m of existentes) {
+    const k = `${m.tc}|${m.fecha}|${Math.round(Number(m.valor))}`;
+    const arr = porValor.get(k) ?? [];
+    arr.push(m);
+    porValor.set(k, arr);
   }
 
   return filas.map((f) => {
@@ -76,7 +88,19 @@ function marcarDuplicados(filas: FilaPrev[], existentes: Movimiento[]): FilaPrev
         conteo.set(k, restantes - 1);
       }
     }
-    return { ...f, duplicado, incluir: !duplicado };
+    let posibleMismoId: string | null = null;
+    let posibleMismoDescripcion: string | null = null;
+    if (!duplicado) {
+      const kValor = `${f.tc}|${f.fecha}|${Math.round(f.valor)}`;
+      const candidato = (porValor.get(kValor) ?? []).find(
+        (m) => m.descripcion.trim().toUpperCase() !== f.descripcion.trim().toUpperCase(),
+      );
+      if (candidato) {
+        posibleMismoId = candidato.id;
+        posibleMismoDescripcion = candidato.descripcion;
+      }
+    }
+    return { ...f, duplicado, incluir: !duplicado, posibleMismoId, posibleMismoDescripcion };
   });
 }
 
@@ -187,6 +211,8 @@ function ModoSemana() {
               trm: null,
               duplicado: false,
               incluir: true,
+              posibleMismoId: null,
+              posibleMismoDescripcion: null,
             });
           }
         } else if (/\.pdf$/i.test(file.name)) {
@@ -209,6 +235,8 @@ function ModoSemana() {
               trm: null,
               duplicado: false,
               incluir: true,
+              posibleMismoId: null,
+              posibleMismoDescripcion: null,
             });
           }
         } else {
@@ -232,6 +260,8 @@ function ModoSemana() {
               trm: null,
               duplicado: false,
               incluir: true,
+              posibleMismoId: null,
+              posibleMismoDescripcion: null,
             });
           }
         }
@@ -298,8 +328,30 @@ function ModoSemana() {
     setFilas((prev) => recalcular(prev.map((f) => ({ ...f, tc }))));
   }
 
+  async function esElMismo(f: FilaPrev) {
+    if (!f.posibleMismoId) return;
+    try {
+      await actualizarMovimiento(f.posibleMismoId, {
+        descripcion: f.descripcion.trim(),
+        ...(f.doc ? { doc: f.doc } : {}),
+      });
+      await qc.invalidateQueries({ queryKey: movimientosQuery.queryKey });
+      setFilas((prev) => prev.filter((x) => x.key !== f.key));
+    } catch (e) {
+      setAviso(`No se pudo actualizar el movimiento: ${e instanceof Error ? e.message : "error"}`);
+    }
+  }
+
+  function esDiferente(key: string) {
+    setFilas((prev) =>
+      prev.map((f) =>
+        f.key === key ? { ...f, posibleMismoId: null, posibleMismoDescripcion: null } : f,
+      ),
+    );
+  }
+
   async function confirmar() {
-    const aInsertar = filas.filter((f) => f.incluir);
+    const aInsertar = filas.filter((f) => f.incluir && !f.posibleMismoId);
     if (aInsertar.some((f) => !f.tc.trim())) {
       setAviso("Falta el número de TC. Escríbelo arriba antes de guardar.");
       return;
@@ -321,7 +373,7 @@ function ModoSemana() {
       }));
       await insertarMovimientos(rows);
       await qc.invalidateQueries({ queryKey: movimientosQuery.queryKey });
-      setFilas([]);
+      setFilas((prev) => prev.filter((f) => f.posibleMismoId));
       setLeidas(0);
       setAviso(`Se guardaron ${rows.length} movimientos.`);
     } catch (e) {
@@ -465,12 +517,47 @@ function ModoSemana() {
         </Card>
       ) : null}
 
+      {filas.some((f) => f.posibleMismoId) ? (
+        <Card title="¿Alguno de estos ya está guardado con otro nombre?">
+          <div className="space-y-3">
+            {filas
+              .filter((f) => f.posibleMismoId)
+              .map((f) => (
+                <div
+                  key={f.key}
+                  className="rounded border border-warning/40 bg-warning/10 px-3 py-2 text-[13px]"
+                >
+                  <p>
+                    El archivo trae <strong>{formatFecha(f.fecha)} · {f.descripcion || "—"} · {formatCOP(f.valor)}</strong>{" "}
+                    (TC {f.tc}), y ya existe guardado un movimiento con la misma fecha y el mismo
+                    valor pero descrito como{" "}
+                    <strong>&ldquo;{f.posibleMismoDescripcion}&rdquo;</strong>. ¿Es el mismo gasto
+                    (por ejemplo, uno que llegó como &ldquo;COMPRA&rdquo; y ahora ya muestra el
+                    nombre real)?
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button type="button" className={btnPrimary} onClick={() => void esElMismo(f)}>
+                      Sí, es el mismo (actualizar nombre)
+                    </button>
+                    <button type="button" className={btnGhost} onClick={() => esDiferente(f.key)}>
+                      No, es un gasto distinto
+                    </button>
+                  </div>
+                </div>
+              ))}
+          </div>
+        </Card>
+      ) : null}
+
       <Card title="3. Previsualización (edita antes de guardar)">
         {filas.length > 0 ? (
           <p className="mb-3 text-[12.5px] text-muted-foreground">
             {leidas} movimientos leídos → <strong className="text-foreground">{nuevos} nuevos</strong>
-            , {dups} ya estaban guardados, {filas.filter((f) => f.incluir).length} marcados para
-            guardar.
+            , {dups} ya estaban guardados
+            {filas.some((f) => f.posibleMismoId)
+              ? `, ${filas.filter((f) => f.posibleMismoId).length} con posible repetido sin revisar (no se guardan hasta que los confirmes arriba)`
+              : ""}
+            , {filas.filter((f) => f.incluir && !f.posibleMismoId).length} marcados para guardar.
           </p>
         ) : null}
 
@@ -493,7 +580,9 @@ function ModoSemana() {
               {filas.map((f) => (
                 <tr
                   key={f.key}
-                  className={`border-t border-border ${f.duplicado ? "bg-muted/60" : ""}`}
+                  className={`border-t border-border ${
+                    f.posibleMismoId ? "bg-warning/10" : f.duplicado ? "bg-muted/60" : ""
+                  }`}
                 >
                   <td className="px-2 py-1.5">
                     <input
@@ -560,10 +649,14 @@ function ModoSemana() {
                   <td className="px-2 py-1.5">
                     <span
                       className={`rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${
-                        f.duplicado ? "bg-muted text-muted-foreground" : "bg-success/12 text-success"
+                        f.posibleMismoId
+                          ? "bg-warning/20 text-warning"
+                          : f.duplicado
+                            ? "bg-muted text-muted-foreground"
+                            : "bg-success/12 text-success"
                       }`}
                     >
-                      {f.duplicado ? "Ya existe" : "Nuevo"}
+                      {f.posibleMismoId ? "¿Repetido?" : f.duplicado ? "Ya existe" : "Nuevo"}
                     </span>
                   </td>
                   <td className="px-2 py-1.5">
@@ -602,6 +695,8 @@ function ModoSemana() {
                   trm: null,
                   duplicado: false,
                   incluir: true,
+                  posibleMismoId: null,
+                  posibleMismoDescripcion: null,
                 },
               ])
             }
@@ -611,12 +706,12 @@ function ModoSemana() {
           <button
             type="button"
             className={btnPrimary}
-            disabled={guardando || filas.filter((f) => f.incluir).length === 0}
+            disabled={guardando || filas.filter((f) => f.incluir && !f.posibleMismoId).length === 0}
             onClick={() => void confirmar()}
           >
             {guardando
               ? "Guardando…"
-              : `Confirmar y guardar (${filas.filter((f) => f.incluir).length})`}
+              : `Confirmar y guardar (${filas.filter((f) => f.incluir && !f.posibleMismoId).length})`}
           </button>
         </div>
       </Card>
@@ -1070,6 +1165,8 @@ function filaManualVacia(tc = ""): FilaPrev {
     trm: null,
     duplicado: false,
     incluir: true,
+    posibleMismoId: null,
+    posibleMismoDescripcion: null,
   };
 }
 
