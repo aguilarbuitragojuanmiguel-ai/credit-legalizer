@@ -21,6 +21,7 @@ import {
 import { parseDaviviendaPdf } from "@/lib/parsers/davivienda";
 import { parseBancolombiaExcel } from "@/lib/parsers/bancolombia";
 import { parseBancolombiaPdf } from "@/lib/parsers/bancolombia-pdf";
+import { parseBancoBogotaExcel } from "@/lib/parsers/bancodebogota";
 import { parseLegalizacionExcel, type GastoLegalizado } from "@/lib/parsers/legalizacion";
 import { subirArchivoLegalizacion } from "@/lib/legalizacion-upload";
 import { fetchTRM } from "@/lib/trm";
@@ -78,7 +79,7 @@ function marcarDuplicados(filas: FilaPrev[], existentes: Movimiento[]): FilaPrev
 
   return filas.map((f) => {
     let duplicado = false;
-    if (f.banco === "Davivienda" && f.doc) {
+    if ((f.banco === "Davivienda" || f.banco === "Banco de Bogotá") && f.doc) {
       duplicado = docs.has(`${f.tc}|${f.doc}`);
     } else {
       const k = `${f.tc}|${f.fecha}|${Math.round(f.valor)}|${f.descripcion.trim().toUpperCase()}`;
@@ -150,7 +151,9 @@ export default function Subir() {
 function ModoSemana() {
   const qc = useQueryClient();
   const { data: existentes } = useQuery(movimientosQuery);
-  const [banco, setBanco] = useState<"Davivienda" | "Bancolombia">("Davivienda");
+  const [banco, setBanco] = useState<"Davivienda" | "Bancolombia" | "Banco de Bogotá">(
+    "Davivienda",
+  );
   const [cargando, setCargando] = useState(false);
   const [guardando, setGuardando] = useState(false);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -169,7 +172,7 @@ function ModoSemana() {
     const out: FilaPrev[] = [];
     for (const f of base) {
       const k =
-        f.doc && f.banco === "Davivienda"
+        f.doc && (f.banco === "Davivienda" || f.banco === "Banco de Bogotá")
           ? `d|${f.tc}|${f.doc}`
           : `x|${f.tc}|${f.fecha}|${Math.round(f.valor)}|${f.descripcion.trim().toUpperCase()}`;
       if (vistos.has(k)) continue;
@@ -196,6 +199,31 @@ function ModoSemana() {
           const tc = tcDetectado || res.tc || "";
           if (res.tc && !tcDetectado) tcDetectado = res.tc;
           if (res.filas.length === 0) errores.push(`${file.name}: sin filas legibles`);
+          for (const f of res.filas) {
+            acumulado.push({
+              key: nextKey(),
+              tc: res.tc || tc,
+              banco,
+              fecha: f.fecha,
+              doc: f.doc,
+              descripcion: f.descripcion,
+              valor: f.valor,
+              tipo: clasificar(f.descripcion),
+              moneda: "COP",
+              valorOriginal: null,
+              trm: null,
+              duplicado: false,
+              incluir: true,
+              posibleMismoId: null,
+              posibleMismoDescripcion: null,
+            });
+          }
+        } else if (banco === "Banco de Bogotá") {
+          const res = await parseBancoBogotaExcel(file);
+          const tc = tcDetectado || res.tc || "";
+          if (res.tc && !tcDetectado) tcDetectado = res.tc;
+          if (res.filas.length === 0) errores.push(`${file.name}: sin filas legibles`);
+          if (res.aviso) errores.push(`${file.name}: ${res.aviso}`);
           for (const f of res.filas) {
             acumulado.push({
               key: nextKey(),
@@ -405,20 +433,29 @@ function ModoSemana() {
             <select
               className={inputCls}
               value={banco}
-              onChange={(e) => setBanco(e.target.value as "Davivienda" | "Bancolombia")}
+              onChange={(e) =>
+                setBanco(e.target.value as "Davivienda" | "Bancolombia" | "Banco de Bogotá")
+              }
             >
               <option value="Davivienda">Davivienda (PDF)</option>
               <option value="Bancolombia">Bancolombia (Excel o PDF de movimientos)</option>
+              <option value="Banco de Bogotá">Banco de Bogotá (Excel)</option>
             </select>
           </label>
           <label className="block">
             <span className="mb-1 block text-[12px] font-medium text-muted-foreground">
-              Archivos {banco === "Davivienda" ? "PDF" : "Excel o PDF"} (puedes elegir varios)
+              Archivos {banco === "Davivienda" ? "PDF" : banco === "Banco de Bogotá" ? "Excel" : "Excel o PDF"} (puedes elegir varios)
             </span>
             <input
               type="file"
               multiple
-              accept={banco === "Davivienda" ? ".pdf" : ".xlsx,.xls,.pdf"}
+              accept={
+                banco === "Davivienda"
+                  ? ".pdf"
+                  : banco === "Banco de Bogotá"
+                    ? ".xlsx,.xls"
+                    : ".xlsx,.xls,.pdf"
+              }
               className="text-[13px]"
               onChange={(e) => {
                 const fs = Array.from(e.target.files ?? []);
@@ -1285,6 +1322,7 @@ function ModoManual() {
                   >
                     <option value="Davivienda">Davivienda</option>
                     <option value="Bancolombia">Bancolombia</option>
+                    <option value="Banco de Bogotá">Banco de Bogotá</option>
                   </select>
                 </td>
                 <td className="px-2 py-1.5">
