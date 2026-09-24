@@ -65,6 +65,8 @@ export const PALABRAS_BANCARIAS = [
   "CRU SALDO FAVOR",
   "ABONO SUCURSAL VIRTUAL",
   "DEV COMI",
+  "GMF",
+  "CUOTA DE MANEJO",
 ];
 
 export type Tipo = "Consumo" | "Movimiento Bancario";
