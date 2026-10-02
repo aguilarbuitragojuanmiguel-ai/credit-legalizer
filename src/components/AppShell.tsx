@@ -5,6 +5,7 @@ const nav = [
   { to: "/", label: "Resumen" },
   { to: "/movimientos", label: "Movimientos" },
   { to: "/subir", label: "Subir soporte" },
+  { to: "/fiscal", label: "Fiscal" },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
