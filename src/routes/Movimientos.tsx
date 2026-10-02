@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { AppShell, Card, EstadoPill } from "@/components/AppShell";
-import { formatCOP, formatFecha, hoyISO, type Tipo } from "@/lib/format";
+import { formatCOP, formatFecha, hoyISO, type ClasificacionFiscal, type Tipo } from "@/lib/format";
 import {
   actualizarMovimiento,
   marcarLegalizados,
@@ -21,6 +21,7 @@ export default function Movimientos() {
   const [tcFiltro, setTcFiltro] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState("");
   const [soporteFiltro, setSoporteFiltro] = useState("");
+  const [fiscalFiltro, setFiscalFiltro] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [seleccion, setSeleccion] = useState<Record<string, boolean>>({});
 
@@ -37,6 +38,9 @@ export default function Movimientos() {
         (!soporteFiltro ||
           (soporteFiltro === "con" && m.soporte_listo) ||
           (soporteFiltro === "sin" && !m.soporte_listo)) &&
+        (!fiscalFiltro ||
+          (fiscalFiltro === "sin" && !m.clasificacion_fiscal) ||
+          m.clasificacion_fiscal === fiscalFiltro) &&
         (!busqueda || m.descripcion.toLowerCase().includes(busqueda.toLowerCase())),
     )
     .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha));
@@ -73,6 +77,12 @@ export default function Movimientos() {
   const cambiarSoporte = useMutation({
     mutationFn: async ({ id, valor }: { id: string; valor: boolean }) =>
       actualizarMovimiento(id, { soporte_listo: valor }),
+    onSuccess: invalidar,
+  });
+
+  const cambiarClasificacion = useMutation({
+    mutationFn: async ({ id, valor }: { id: string; valor: ClasificacionFiscal }) =>
+      actualizarMovimiento(id, { clasificacion_fiscal: valor }),
     onSuccess: invalidar,
   });
 
@@ -126,6 +136,16 @@ export default function Movimientos() {
             <option value="con">Con soporte listo</option>
             <option value="sin">Sin soporte</option>
           </select>
+          <select
+            className={inputCls}
+            value={fiscalFiltro}
+            onChange={(e) => setFiscalFiltro(e.target.value)}
+          >
+            <option value="">Clasificación fiscal: todas</option>
+            <option value="no_deducible">No deducible</option>
+            <option value="probable">Probable</option>
+            <option value="sin">Sin clasificar</option>
+          </select>
           <input
             className={`${inputCls} min-w-[220px] flex-1`}
             placeholder="Buscar en la descripción…"
@@ -170,6 +190,7 @@ export default function Movimientos() {
                   <th className="px-3 py-2 font-semibold">Tipo</th>
                   <th className="px-3 py-2 font-semibold">Estado</th>
                   <th className="w-16 px-3 py-2 text-center font-semibold">Soporte</th>
+                  <th className="px-3 py-2 font-semibold">Clasificación fiscal</th>
                   <th className="px-3 py-2 font-semibold">Archivo</th>
                 </tr>
               </thead>
@@ -228,6 +249,52 @@ export default function Movimientos() {
                               cambiarSoporte.mutate({ id: m.id, valor: e.target.checked })
                             }
                           />
+                        ) : null}
+                      </td>
+                      <td className="px-3 py-2">
+                        {m.tipo === "Consumo" ? (
+                          <div className="flex flex-wrap items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={cambiarClasificacion.isPending}
+                              onClick={() =>
+                                cambiarClasificacion.mutate({ id: m.id, valor: "no_deducible" })
+                              }
+                              className={`rounded px-2 py-1 text-[11.5px] font-semibold transition-colors ${
+                                m.clasificacion_fiscal === "no_deducible"
+                                  ? "bg-destructive text-destructive-foreground"
+                                  : "bg-muted text-muted-foreground hover:bg-destructive/15 hover:text-destructive"
+                              }`}
+                            >
+                              No deducible
+                            </button>
+                            <button
+                              type="button"
+                              disabled={cambiarClasificacion.isPending}
+                              onClick={() =>
+                                cambiarClasificacion.mutate({ id: m.id, valor: "probable" })
+                              }
+                              className={`rounded px-2 py-1 text-[11.5px] font-semibold transition-colors ${
+                                m.clasificacion_fiscal === "probable"
+                                  ? "bg-warning text-primary-foreground"
+                                  : "bg-muted text-muted-foreground hover:bg-warning/20 hover:text-warning"
+                              }`}
+                            >
+                              Probable
+                            </button>
+                            {m.clasificacion_fiscal ? (
+                              <button
+                                type="button"
+                                disabled={cambiarClasificacion.isPending}
+                                onClick={() =>
+                                  cambiarClasificacion.mutate({ id: m.id, valor: null })
+                                }
+                                className="rounded px-2 py-1 text-[11.5px] font-medium text-muted-foreground underline hover:text-foreground"
+                              >
+                                Quitar
+                              </button>
+                            ) : null}
+                          </div>
                         ) : null}
                       </td>
                       <td className="px-3 py-2">
