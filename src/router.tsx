@@ -3,6 +3,7 @@ import { createRootRoute, createRoute, createRouter, Outlet } from "@tanstack/re
 import Resumen from "./routes/Resumen";
 import Movimientos from "./routes/Movimientos";
 import Subir from "./routes/Subir";
+import Fiscal from "./routes/Fiscal";
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -40,7 +41,13 @@ const subirRoute = createRoute({
   component: Subir,
 });
 
-const routeTree = rootRoute.addChildren([resumenRoute, movimientosRoute, subirRoute]);
+const fiscalRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/fiscal",
+  component: Fiscal,
+});
+
+const routeTree = rootRoute.addChildren([resumenRoute, movimientosRoute, subirRoute, fiscalRoute]);
 
 export const router = createRouter({ routeTree });
 
