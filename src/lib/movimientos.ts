@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { Estado, Tipo } from "./format";
+import type { ClasificacionFiscal, Estado, Tipo } from "./format";
 
 export type Movimiento = {
   id: string;
@@ -18,6 +18,7 @@ export type Movimiento = {
   valor_original: number | null;
   trm: number | null;
   soporte_listo: boolean;
+  clasificacion_fiscal: ClasificacionFiscal;
   created_at: string;
 };
 

@@ -71,6 +71,55 @@ export const PALABRAS_BANCARIAS = [
 
 export type Tipo = "Consumo" | "Movimiento Bancario";
 export type Estado = "Pendiente" | "Legalizado" | "N/A";
+export type ClasificacionFiscal = "no_deducible" | "probable" | null;
+
+/** "2026-08-21" -> "2026-T3" */
+export function trimestreDe(fechaISO: string | null | undefined): string | null {
+  if (!fechaISO) return null;
+  const m = fechaISO.match(/^(\d{4})-(\d{2})/);
+  if (!m) return null;
+  const anio = m[1] ?? "";
+  const mes = Number(m[2]);
+  const t = Math.ceil(mes / 3);
+  return `${anio}-T${t}`;
+}
+
+/** "2026-T3" -> "T3 2026" */
+export function trimestreLabel(key: string): string {
+  const m = key.match(/^(\d{4})-T(\d)$/);
+  if (!m) return key;
+  return `T${m[2]} ${m[1]}`;
+}
+
+/** "2026-08-21" -> "2026-08" */
+export function mesDe(fechaISO: string | null | undefined): string | null {
+  if (!fechaISO) return null;
+  const m = fechaISO.match(/^(\d{4}-\d{2})/);
+  return m ? (m[1] ?? null) : null;
+}
+
+/** "2026-08" -> "Agosto 2026" */
+const MESES = [
+  "Enero",
+  "Febrero",
+  "Marzo",
+  "Abril",
+  "Mayo",
+  "Junio",
+  "Julio",
+  "Agosto",
+  "Septiembre",
+  "Octubre",
+  "Noviembre",
+  "Diciembre",
+];
+export function mesLabel(key: string): string {
+  const m = key.match(/^(\d{4})-(\d{2})$/);
+  if (!m) return key;
+  const anio = m[1] ?? "";
+  const mesIdx = Number(m[2]) - 1;
+  return `${MESES[mesIdx] ?? m[2]} ${anio}`;
+}
 
 export function clasificar(descripcion: string): Tipo {
   const d = (descripcion || "").toUpperCase();
