@@ -17,6 +17,19 @@ interface Env {
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  if (!env.SUPABASE_URL || !env.SUPABASE_SERVICE_ROLE_KEY) {
+    return new Response("Faltan variables de entorno en Cloudflare Pages", { status: 500 });
+  }
+
+  // Solo usuarios con sesión válida de Supabase pueden subir archivos.
+  const auth = request.headers.get("Authorization") ?? "";
+  const token = auth.startsWith("Bearer ") ? auth.slice(7) : "";
+  if (!token) return new Response("No autorizado", { status: 401 });
+  const userRes = await fetch(`${env.SUPABASE_URL}/auth/v1/user`, {
+    headers: { apikey: env.SUPABASE_SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
+  });
+  if (!userRes.ok) return new Response("No autorizado", { status: 401 });
+
   const url = new URL(request.url);
   const nombreParam = url.searchParams.get("nombre");
   if (!nombreParam) {

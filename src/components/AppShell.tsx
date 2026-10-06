@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 
+import { supabase } from "@/integrations/supabase/client";
+
 const nav = [
   { to: "/", label: "Resumen" },
   { to: "/movimientos", label: "Movimientos" },
@@ -30,6 +32,13 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {item.label}
               </Link>
             ))}
+            <button
+              type="button"
+              onClick={() => void supabase.auth.signOut()}
+              className="rounded px-3 py-1.5 text-[13px] font-medium opacity-70 transition-colors hover:bg-white/10 hover:opacity-100"
+            >
+              Cerrar sesión
+            </button>
           </nav>
         </div>
       </header>
