@@ -146,7 +146,7 @@ export async function generarActaFiscalPDF(titulo: string, gastos: GastoPDF[]) {
     doc.setFontSize(FUENTE + 0.5);
     const x = colX();
     doc.text("TOTAL:", x + PAD, y + 11);
-    doc.text(`$ ${miles(subtotal, 2)}`, x + COL_W - PAD, y + 11, { align: "right" });
+    doc.text(`$ ${miles(subtotal)}`, x + COL_W - PAD, y + 11, { align: "right" });
     y += TOTAL_H + 8;
   }
 
@@ -158,7 +158,7 @@ export async function generarActaFiscalPDF(titulo: string, gastos: GastoPDF[]) {
   doc.setFont("helvetica", "bold");
   doc.setFontSize(FUENTE + 0.5);
   doc.text("SALDO TOTAL", xs + PAD, y + 11);
-  doc.text(`$ ${miles(saldoTotal, 2)}`, xs + COL_W - PAD, y + 11, { align: "right" });
+  doc.text(`$ ${miles(saldoTotal)}`, xs + COL_W - PAD, y + 11, { align: "right" });
 
   const nombre =
     tituloTxt
