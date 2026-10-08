@@ -12,6 +12,7 @@ import {
   type ClasificacionFiscal,
 } from "@/lib/format";
 import { movimientosQuery, type Movimiento } from "@/lib/movimientos";
+import { generarActaFiscalPDF } from "@/lib/pdf-fiscal";
 
 const inputCls =
   "rounded border border-input bg-card px-2 py-1.5 text-[13px] outline-none focus:border-ring";
@@ -89,6 +90,9 @@ export default function Fiscal() {
   const [clasifFiltro, setClasifFiltro] = useState<"" | "no_deducible" | "probable">("");
   const [trimestreFiltro, setTrimestreFiltro] = useState("");
   const [mesFiltro, setMesFiltro] = useState("");
+  const [tituloActa, setTituloActa] = useState("RELACION GASTOS NO DEDUCIBLES ");
+  const [exportando, setExportando] = useState(false);
+  const [errorPDF, setErrorPDF] = useState<string | null>(null);
 
   const clasificados = movs.filter(
     (m) => m.tipo === "Consumo" && (m.clasificacion_fiscal === "no_deducible" || m.clasificacion_fiscal === "probable"),
@@ -118,6 +122,36 @@ export default function Fiscal() {
   );
 
   const filas = agrupar(filtrados);
+
+  // El acta en PDF siempre es de No deducible; respeta trimestre y "hasta mes".
+  const gastosActa = clasificados.filter(
+    (m) =>
+      m.clasificacion_fiscal === "no_deducible" &&
+      (!trimestreFiltro || trimestreDe(m.fecha) === trimestreFiltro) &&
+      (!mesFiltro || (mesDe(m.fecha) ?? "") <= mesFiltro),
+  );
+  const totalActa = gastosActa.reduce((s, m) => s + Number(m.valor), 0);
+
+  async function exportarActa() {
+    setErrorPDF(null);
+    setExportando(true);
+    try {
+      const { doc, nombre } = await generarActaFiscalPDF(
+        tituloActa,
+        gastosActa.map((m) => ({
+          tc: m.tc,
+          fecha: m.fecha,
+          descripcion: m.descripcion,
+          valor: Number(m.valor),
+        })),
+      );
+      doc.save(`${nombre}.pdf`);
+    } catch {
+      setErrorPDF("No se pudo generar el PDF. Intenta de nuevo.");
+    } finally {
+      setExportando(false);
+    }
+  }
 
   const totalNoDeducible = filtrados
     .filter((m) => m.clasificacion_fiscal === "no_deducible")
@@ -184,6 +218,34 @@ export default function Fiscal() {
                 Limpiar filtros
               </button>
             )}
+          </div>
+
+          <div className="mb-4 rounded-md border border-border bg-table-head p-3">
+            <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Exportar acta en PDF (solo No deducible)
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <input
+                className={`${inputCls} min-w-[280px] flex-1`}
+                value={tituloActa}
+                onChange={(e) => setTituloActa(e.target.value)}
+                placeholder="Título del acta, ej: RELACION GASTOS NO DEDUCIBLES ABRIL - JUNIO 2026"
+              />
+              <button
+                type="button"
+                disabled={exportando || gastosActa.length === 0}
+                onClick={() => void exportarActa()}
+                className="rounded bg-primary px-3 py-1.5 text-[13px] font-semibold text-primary-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {exportando ? "Generando…" : "Exportar PDF"}
+              </button>
+            </div>
+            <p className="mt-2 text-[12px] text-muted-foreground">
+              Se exportan {gastosActa.length} gasto{gastosActa.length === 1 ? "" : "s"} no deducible
+              {gastosActa.length === 1 ? "" : "s"} · {formatCOP(totalActa)}. Usa los filtros de arriba
+              (trimestre u "hasta mes") para elegir el periodo; sin filtros salen todos los trimestres.
+            </p>
+            {errorPDF ? <p className="mt-1 text-[12px] text-destructive">{errorPDF}</p> : null}
           </div>
 
           {isLoading ? (
