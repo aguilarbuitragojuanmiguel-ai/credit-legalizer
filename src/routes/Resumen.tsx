@@ -1,8 +1,15 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 
 import { AppShell, Card } from "@/components/AppShell";
 import { formatCOP } from "@/lib/format";
-import { movimientosQuery, type Movimiento } from "@/lib/movimientos";
+import {
+  claveTC,
+  guardarResponsable,
+  movimientosQuery,
+  responsablesQuery,
+  type Movimiento,
+} from "@/lib/movimientos";
 
 type FilaTC = {
   tc: string;
@@ -54,8 +61,37 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
+function ResponsableInput({ tc, valor }: { tc: string; valor: string }) {
+  const qc = useQueryClient();
+  const [texto, setTexto] = useState(valor);
+  const [guardado, setGuardado] = useState(valor);
+  const guardar = useMutation({
+    mutationFn: (nombre: string) => guardarResponsable(tc, nombre),
+    onSuccess: (_d, nombre) => {
+      setGuardado(nombre.trim());
+      void qc.invalidateQueries({ queryKey: responsablesQuery.queryKey });
+    },
+  });
+  return (
+    <input
+      className="w-44 rounded border border-transparent bg-transparent px-2 py-1 text-[13px] outline-none hover:border-input focus:border-ring focus:bg-card"
+      value={texto}
+      placeholder="Sin responsable"
+      aria-label={`Responsable de la TC ${tc}`}
+      onChange={(e) => setTexto(e.target.value)}
+      onBlur={() => {
+        if (texto.trim() !== guardado) guardar.mutate(texto);
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+      }}
+    />
+  );
+}
+
 export default function Resumen() {
   const { data, isLoading, error } = useQuery(movimientosQuery);
+  const { data: responsables = {} } = useQuery(responsablesQuery);
   const movs = data ?? [];
   const filas = agrupar(movs);
 
@@ -98,6 +134,7 @@ export default function Resumen() {
                 <thead>
                   <tr className="bg-table-head text-left text-[12px] uppercase tracking-wide text-muted-foreground">
                     <th className="px-3 py-2 font-semibold">TC</th>
+                    <th className="px-3 py-2 font-semibold">Responsable</th>
                     <th className="px-3 py-2 font-semibold">Banco</th>
                     <th className="px-3 py-2 text-right font-semibold"># Pend.</th>
                     <th className="px-3 py-2 text-right font-semibold">Valor pendiente</th>
@@ -113,6 +150,13 @@ export default function Resumen() {
                     return (
                       <tr key={f.tc} className="border-t border-border">
                         <td className="px-3 py-2 font-semibold">{f.tc}</td>
+                        <td className="px-3 py-1">
+                          <ResponsableInput
+                            key={`${f.tc}-${responsables[claveTC(f.tc)] ?? ""}`}
+                            tc={f.tc}
+                            valor={responsables[claveTC(f.tc)] ?? ""}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-muted-foreground">{f.banco}</td>
                         <td className="px-3 py-2 text-right tabular-nums">{f.pendientes}</td>
                         <td className="px-3 py-2 text-right tabular-nums text-warning">

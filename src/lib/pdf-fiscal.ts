@@ -23,7 +23,11 @@ const VERDE: [number, number, number] = [169, 208, 142];
  * por TC en dos columnas (etiqueta verde, filas fecha/descripción/valor y
  * TOTAL) y SALDO TOTAL al final. Hoja carta vertical.
  */
-export async function generarActaFiscalPDF(titulo: string, gastos: GastoPDF[]) {
+export async function generarActaFiscalPDF(
+  titulo: string,
+  gastos: GastoPDF[],
+  responsables: Record<string, string> = {},
+) {
   const { jsPDF } = await import("jspdf");
   const doc = new jsPDF({ unit: "pt", format: "letter" });
 
@@ -85,15 +89,26 @@ export async function generarActaFiscalPDF(titulo: string, gastos: GastoPDF[]) {
     y = tope();
   }
 
+  const sinTC = (tc: string) => tc.replace(/^\s*tc\s*/i, "").trim();
+
   function etiquetaTC(tc: string, continuacion: boolean) {
     const x = colX();
     doc.setFont("helvetica", "bold");
     doc.setFontSize(FUENTE + 0.5);
-    const txt = continuacion ? `${tc} (cont.)` : tc;
+    const base = `TC${sinTC(tc)}`;
+    const txt = continuacion ? `${base} (cont.)` : base;
     const w = Math.max(56, doc.getTextWidth(txt) + 10);
     doc.setFillColor(...VERDE);
     doc.rect(x, y, w, TAG_H, "FD");
     doc.text(txt, x + 3, y + 8.5);
+    const resp = responsables[sinTC(tc)];
+    if (resp) {
+      doc.setFontSize(FUENTE);
+      const disp = COL_W - w - 8;
+      let r = resp;
+      while (r.length > 1 && doc.getTextWidth(r) > disp) r = r.slice(0, -1);
+      doc.text(r === resp ? r : `${r.trimEnd()}…`, x + w + 6, y + 8.5);
+    }
     y += TAG_H;
   }
 

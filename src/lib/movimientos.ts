@@ -69,3 +69,44 @@ export async function marcarLegalizados(ids: string[], fecha: string) {
     .in("id", ids);
   if (error) throw error;
 }
+
+/* ---------- Responsable por tarjeta ---------- */
+
+type TablaResponsables = {
+  from: (t: string) => {
+    select: (c: string) => Promise<{
+      data: { tc: string; responsable: string }[] | null;
+      error: Error | null;
+    }>;
+    upsert: (row: { tc: string; responsable: string }) => Promise<{ error: Error | null }>;
+    delete: () => { eq: (c: string, v: string) => Promise<{ error: Error | null }> };
+  };
+};
+const tabla = () => (supabase as unknown as TablaResponsables).from("tc_responsables");
+
+/** "TC 8674" / "tc8674" / "8674" -> "8674" */
+export function claveTC(tc: string): string {
+  return tc.replace(/^\s*tc\s*/i, "").trim();
+}
+
+export const responsablesQuery = {
+  queryKey: ["tc_responsables"] as const,
+  queryFn: async (): Promise<Record<string, string>> => {
+    const { data, error } = await tabla().select("tc,responsable");
+    if (error) throw error;
+    const mapa: Record<string, string> = {};
+    for (const r of data ?? []) mapa[claveTC(r.tc)] = r.responsable;
+    return mapa;
+  },
+};
+
+export async function guardarResponsable(tc: string, responsable: string) {
+  const nombre = responsable.trim();
+  if (!nombre) {
+    const { error } = await tabla().delete().eq("tc", claveTC(tc));
+    if (error) throw error;
+    return;
+  }
+  const { error } = await tabla().upsert({ tc: claveTC(tc), responsable: nombre });
+  if (error) throw error;
+}

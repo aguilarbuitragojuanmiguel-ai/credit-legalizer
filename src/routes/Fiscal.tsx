@@ -11,7 +11,7 @@ import {
   trimestreLabel,
   type ClasificacionFiscal,
 } from "@/lib/format";
-import { movimientosQuery, type Movimiento } from "@/lib/movimientos";
+import { claveTC, movimientosQuery, responsablesQuery, type Movimiento } from "@/lib/movimientos";
 import { generarActaFiscalPDF } from "@/lib/pdf-fiscal";
 
 const inputCls =
@@ -86,6 +86,7 @@ function ClasifBadge({ clasificacion }: { clasificacion: ClasificacionFiscal }) 
 export default function Fiscal() {
   const { data, isLoading } = useQuery(movimientosQuery);
   const movs = data ?? [];
+  const { data: responsables = {} } = useQuery(responsablesQuery);
 
   const [clasifFiltro, setClasifFiltro] = useState<"" | "no_deducible" | "probable">("");
   const [trimestreFiltro, setTrimestreFiltro] = useState("");
@@ -144,6 +145,7 @@ export default function Fiscal() {
           descripcion: m.descripcion,
           valor: Number(m.valor),
         })),
+        responsables,
       );
       doc.save(`${nombre}.pdf`);
     } catch {
@@ -261,7 +263,11 @@ export default function Fiscal() {
                 <div key={f.tc} className="rounded-md border border-border">
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-table-head px-4 py-2.5">
                     <p className="text-[13px] font-semibold">
-                      TC {f.tc} <span className="text-muted-foreground">· {f.banco}</span>
+                      TC {f.tc}{" "}
+                      {responsables[claveTC(f.tc)] ? (
+                        <span className="font-semibold">· {responsables[claveTC(f.tc)]}</span>
+                      ) : null}{" "}
+                      <span className="text-muted-foreground">· {f.banco}</span>
                     </p>
                     <div className="flex flex-wrap gap-4 text-[12.5px]">
                       {f.noDeducibleCount > 0 ? (

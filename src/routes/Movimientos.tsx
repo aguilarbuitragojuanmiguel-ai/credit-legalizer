@@ -6,7 +6,9 @@ import { formatCOP, formatFecha, hoyISO, type ClasificacionFiscal, type Tipo } f
 import {
   actualizarMovimiento,
   marcarLegalizados,
+  claveTC,
   movimientosQuery,
+  responsablesQuery,
   type Movimiento,
 } from "@/lib/movimientos";
 
@@ -17,6 +19,7 @@ export default function Movimientos() {
   const qc = useQueryClient();
   const { data, isLoading } = useQuery(movimientosQuery);
   const movs = data ?? [];
+  const { data: responsables = {} } = useQuery(responsablesQuery);
 
   const [tcFiltro, setTcFiltro] = useState("");
   const [estadoFiltro, setEstadoFiltro] = useState("");
@@ -114,6 +117,7 @@ export default function Movimientos() {
             {tcs.map((tc) => (
               <option key={tc} value={tc}>
                 TC {tc}
+                {responsables[claveTC(tc)] ? ` · ${responsables[claveTC(tc)]}` : ""}
               </option>
             ))}
           </select>
@@ -211,7 +215,14 @@ export default function Movimientos() {
                           />
                         ) : null}
                       </td>
-                      <td className="px-3 py-2 font-semibold">{m.tc}</td>
+                      <td className="px-3 py-2 font-semibold">
+                        {m.tc}
+                        {responsables[claveTC(m.tc)] ? (
+                          <div className="text-[11.5px] font-normal text-muted-foreground">
+                            {responsables[claveTC(m.tc)]}
+                          </div>
+                        ) : null}
+                      </td>
                       <td className="px-3 py-2 text-muted-foreground">{m.banco}</td>
                       <td className="px-3 py-2 tabular-nums">{formatFecha(m.fecha)}</td>
                       <td className="max-w-[320px] px-3 py-2">{m.descripcion}</td>
