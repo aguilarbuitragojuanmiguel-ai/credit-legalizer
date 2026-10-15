@@ -22,6 +22,7 @@ import {
 } from "@/lib/movimientos";
 import { generarActaFiscalPDF } from "@/lib/pdf-fiscal";
 import { ControlAnual } from "./FiscalAnual";
+import { ImportarActa } from "./FiscalImportar";
 
 const inputCls =
   "rounded border border-input bg-card px-2 py-1.5 text-[13px] outline-none focus:border-ring";
@@ -409,7 +410,7 @@ export default function Fiscal() {
   const { data, isLoading } = useQuery(movimientosQuery);
   const { data: responsables = {} } = useQuery(responsablesQuery);
   const movs = data ?? [];
-  const [tab, setTab] = useState<"definir" | "anual">("definir");
+  const [tab, setTab] = useState<"definir" | "anual" | "importar">("definir");
 
   const definitivos = movs.filter((m) => m.tipo === "Consumo" && m.estado === "No deducible");
   const activos = movs.filter((m) => m.estado !== "No deducible");
@@ -430,12 +431,17 @@ export default function Fiscal() {
           <button type="button" className={tabCls(tab === "anual")} onClick={() => setTab("anual")}>
             Control anual ({definitivos.length})
           </button>
+          <button type="button" className={tabCls(tab === "importar")} onClick={() => setTab("importar")}>
+            Importar acta anterior
+          </button>
         </div>
       </div>
       {tab === "definir" ? (
         <PorDefinir movs={activos} isLoading={isLoading} responsables={responsables} />
-      ) : (
+      ) : tab === "anual" ? (
         <ControlAnual definitivos={definitivos} responsables={responsables} />
+      ) : (
+        <ImportarActa movs={movs} />
       )}
     </AppShell>
   );

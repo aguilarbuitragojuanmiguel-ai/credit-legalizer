@@ -101,6 +101,55 @@ export async function devolverAPendientes(ids: string[]) {
   }
 }
 
+/** Importación de actas anteriores: deja los movimientos como No deducible definitivo. */
+export async function importarNoDeducibles(ids: string[], periodo: string, fecha: string) {
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const { error } = await supabase
+      .from("movimientos")
+      .update({
+        estado: "No deducible",
+        clasificacion_fiscal: "no_deducible",
+        fecha_no_deducible: fecha,
+        periodo_no_deducible: periodo,
+        fecha_legalizacion: null,
+      } as never)
+      .in("id", ids.slice(i, i + LOTE));
+    if (error) throw error;
+  }
+}
+
+export type NoDeducibleImportado = {
+  tc: string;
+  banco: string;
+  fecha: string;
+  descripcion: string;
+  valor: number;
+};
+
+/** Agrega gastos que no estaban en la app, directo como No deducible definitivo. */
+export async function insertarNoDeduciblesImportados(
+  rows: NoDeducibleImportado[],
+  periodo: string,
+  fecha: string,
+) {
+  const completas = rows.map((r) => ({
+    ...r,
+    doc: null,
+    tipo: "Consumo",
+    estado: "No deducible",
+    moneda: "COP",
+    clasificacion_fiscal: "no_deducible",
+    fecha_no_deducible: fecha,
+    periodo_no_deducible: periodo,
+  }));
+  for (let i = 0; i < completas.length; i += LOTE) {
+    const { error } = await supabase
+      .from("movimientos")
+      .insert(completas.slice(i, i + LOTE) as never);
+    if (error) throw error;
+  }
+}
+
 export async function marcarLegalizados(ids: string[], fecha: string) {
   const { error } = await supabase
     .from("movimientos")
