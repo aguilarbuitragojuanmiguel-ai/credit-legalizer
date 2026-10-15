@@ -44,15 +44,21 @@ const MESES = [
 export function normalizarFechaActa(texto: string): { fecha: string | null; ajustada: boolean } {
   const m = texto.trim().match(FECHA_RE);
   if (!m) return { fecha: null, ajustada: false };
-  const dia = parseInt(m[1] ?? "", 10);
-  const mes = parseInt(m[2] ?? "", 10);
+  let dia = parseInt(m[1] ?? "", 10);
+  let mes = parseInt(m[2] ?? "", 10);
   const anio = parseInt(m[3] ?? "", 10);
+  let invertida = false;
+  // "2/18/2026" (mes/día invertidos) -> 18/02/2026
+  if (mes > 12 && dia >= 1 && dia <= 12 && mes <= 31) {
+    [dia, mes] = [mes, dia];
+    invertida = true;
+  }
   if (!(mes >= 1 && mes <= 12) || !(dia >= 1)) return { fecha: null, ajustada: false };
   const ultimo = new Date(anio, mes, 0).getDate();
   const d = Math.min(dia, ultimo);
   return {
     fecha: `${anio}-${String(mes).padStart(2, "0")}-${String(d).padStart(2, "0")}`,
-    ajustada: dia > ultimo,
+    ajustada: invertida || dia > ultimo,
   };
 }
 
@@ -122,16 +128,13 @@ export function parseActaItems(paginas: { items: ItemTexto[]; ancho: number }[])
         }
         if (/^(TOTAL|SALDO)/i.test(txt)) continue;
 
-        const primero = linea[0]?.str.trim() ?? "";
-        const ultimo = linea[linea.length - 1]?.str.trim() ?? "";
-        if (!FECHA_RE.test(primero) || !VALOR_RE.test(ultimo) || linea.length < 2) continue;
+        // Tokens por palabras: la fecha puede venir pegada a la descripción en un mismo item
+        const tokens = txt.split(" ");
+        const primero = tokens[0] ?? "";
+        const ultimo = tokens[tokens.length - 1] ?? "";
+        if (!FECHA_RE.test(primero) || !VALOR_RE.test(ultimo) || tokens.length < 2) continue;
 
-        const descripcion = linea
-          .slice(1, -1)
-          .map((i) => i.str.trim())
-          .join(" ")
-          .replace(/\s+/g, " ")
-          .trim();
+        const descripcion = tokens.slice(1, -1).join(" ").trim();
         const { fecha, ajustada } = normalizarFechaActa(primero);
         filas.push({
           tc: tcActual,
