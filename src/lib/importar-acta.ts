@@ -35,10 +35,21 @@ function puntajeDescripcion(a: string, b: string): number {
   return y.split(" ").some((w) => w.length > 2 && ta.has(w)) ? 1 : 0;
 }
 
-function puntajeFecha(filaFecha: string | null, movFecha: string): number {
+function diasEntre(a: string, b: string): number {
+  return Math.abs(Date.parse(`${a}T00:00:00Z`) - Date.parse(`${b}T00:00:00Z`)) / 86_400_000;
+}
+
+/**
+ * Puntaje por cercanía de fechas: igual = 3, hasta 7 días = 2, hasta 45 días = 1.
+ * null = demasiado lejos: no puede ser el mismo gasto.
+ */
+function puntajeFecha(filaFecha: string | null, movFecha: string): number | null {
   if (!filaFecha) return 0;
-  if (filaFecha === movFecha) return 3;
-  return filaFecha.slice(0, 7) === movFecha.slice(0, 7) ? 1 : 0;
+  const d = diasEntre(filaFecha, movFecha);
+  if (d === 0) return 3;
+  if (d <= 7) return 2;
+  if (d <= 45) return 1;
+  return null;
 }
 
 /**
@@ -60,6 +71,9 @@ export function cruzarActa(
       if (claveTC(m.tc) !== tcApp) continue;
       if (Math.abs(Number(m.valor) - f.valor) >= 1) continue;
       const fecha = puntajeFecha(f.fecha, m.fecha);
+      if (fecha === null) continue; // fechas a meses de distancia: otro gasto
+      // Lo que ya es definitivo solo cuenta como "el mismo" si la fecha es casi igual
+      if (m.estado === "No deducible" && f.fecha && fecha < 2) continue;
       const desc = puntajeDescripcion(f.descripcion, m.descripcion);
       pares.push({ i, m, puntaje: fecha + desc, fecha, desc });
     }
@@ -83,7 +97,7 @@ export function cruzarActa(
       return { idx, fila: f, tcApp, match: null, confianza: null, yaDefinitivo: false, aviso: null };
     }
     const confianza: Confianza =
-      a.fecha === 3 && a.desc >= 1 ? "alta" : a.desc === 3 || a.fecha === 3 ? "media" : "baja";
+      a.fecha === 3 && a.desc >= 1 ? "alta" : a.desc === 3 || a.fecha >= 2 ? "media" : "baja";
     const aviso = a.m.archivo_legalizacion_url
       ? "Tiene archivo de legalización: puede que sí se haya legalizado"
       : null;
