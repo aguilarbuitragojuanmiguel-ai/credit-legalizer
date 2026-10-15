@@ -62,6 +62,11 @@ export async function actualizarMovimiento(id: string, patch: Record<string, unk
   if (error) throw error;
 }
 
+export async function eliminarMovimiento(id: string) {
+  const { error } = await supabase.from("movimientos").delete().eq("id", id);
+  if (error) throw error;
+}
+
 export async function marcarLegalizados(ids: string[], fecha: string) {
   const { error } = await supabase
     .from("movimientos")

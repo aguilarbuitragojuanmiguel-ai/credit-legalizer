@@ -5,6 +5,7 @@ import { AppShell, Card, EstadoPill } from "@/components/AppShell";
 import { formatCOP, formatFecha, hoyISO, type ClasificacionFiscal, type Tipo } from "@/lib/format";
 import {
   actualizarMovimiento,
+  eliminarMovimiento,
   marcarLegalizados,
   claveTC,
   movimientosQuery,
@@ -82,6 +83,24 @@ export default function Movimientos() {
       actualizarMovimiento(id, { soporte_listo: valor }),
     onSuccess: invalidar,
   });
+
+  const eliminar = useMutation({
+    mutationFn: async (id: string) => eliminarMovimiento(id),
+    onSuccess: (_d, id) => {
+      setSeleccion((s) => {
+        const { [id]: _quitado, ...resto } = s;
+        return resto;
+      });
+      void invalidar();
+    },
+  });
+
+  function pedirEliminar(m: Movimiento) {
+    const ok = window.confirm(
+      `¿Eliminar este movimiento para siempre?\n\nTC ${m.tc} · ${formatFecha(m.fecha)}\n${m.descripcion}\n${formatCOP(m.valor)}\nEstado: ${m.estado}\n\nEsta acción no se puede deshacer.`,
+    );
+    if (ok) eliminar.mutate(m.id);
+  }
 
   const cambiarClasificacion = useMutation({
     mutationFn: async ({ id, valor }: { id: string; valor: ClasificacionFiscal }) =>
@@ -196,6 +215,7 @@ export default function Movimientos() {
                   <th className="w-16 px-3 py-2 text-center font-semibold">Soporte</th>
                   <th className="px-3 py-2 font-semibold">Clasificación fiscal</th>
                   <th className="px-3 py-2 font-semibold">Archivo</th>
+                  <th className="w-12 px-3 py-2 text-center font-semibold">Borrar</th>
                 </tr>
               </thead>
               <tbody>
@@ -321,6 +341,18 @@ export default function Movimientos() {
                         ) : (
                           <span className="text-muted-foreground">—</span>
                         )}
+                      </td>
+                      <td className="px-3 py-2 text-center">
+                        <button
+                          type="button"
+                          disabled={eliminar.isPending}
+                          onClick={() => pedirEliminar(m)}
+                          title="Eliminar este movimiento (aunque esté legalizado)"
+                          aria-label={`Eliminar ${m.descripcion}`}
+                          className="rounded px-2 py-1 text-[12px] font-medium text-muted-foreground transition-colors hover:bg-destructive/15 hover:text-destructive disabled:opacity-40"
+                        >
+                          Eliminar
+                        </button>
                       </td>
                     </tr>
                   );
