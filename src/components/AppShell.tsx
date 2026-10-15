@@ -74,7 +74,9 @@ export function EstadoPill({ estado }: { estado: string }) {
       ? "bg-success/12 text-success"
       : estado === "Pendiente"
         ? "bg-warning/15 text-warning"
-        : "bg-muted text-muted-foreground";
+        : estado === "No deducible"
+          ? "bg-destructive/12 text-destructive"
+          : "bg-muted text-muted-foreground";
   return (
     <span className={`inline-block rounded-full px-2 py-0.5 text-[11.5px] font-semibold ${cls}`}>
       {estado}

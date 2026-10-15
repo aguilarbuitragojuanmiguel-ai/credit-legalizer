@@ -1,18 +1,27 @@
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
 
 import { AppShell, Card } from "@/components/AppShell";
 import {
   formatCOP,
   formatFecha,
+  hoyISO,
   mesDe,
   mesLabel,
+  trimestreAnterior,
   trimestreDe,
   trimestreLabel,
   type ClasificacionFiscal,
 } from "@/lib/format";
-import { claveTC, movimientosQuery, responsablesQuery, type Movimiento } from "@/lib/movimientos";
+import {
+  claveTC,
+  llevarNoDeducibleDefinitivo,
+  movimientosQuery,
+  responsablesQuery,
+  type Movimiento,
+} from "@/lib/movimientos";
 import { generarActaFiscalPDF } from "@/lib/pdf-fiscal";
+import { ControlAnual } from "./FiscalAnual";
 
 const inputCls =
   "rounded border border-input bg-card px-2 py-1.5 text-[13px] outline-none focus:border-ring";
@@ -83,10 +92,37 @@ function ClasifBadge({ clasificacion }: { clasificacion: ClasificacionFiscal }) 
   return null;
 }
 
-export default function Fiscal() {
-  const { data, isLoading } = useQuery(movimientosQuery);
-  const movs = data ?? [];
-  const { data: responsables = {} } = useQuery(responsablesQuery);
+function PorDefinir({
+  movs,
+  isLoading,
+  responsables,
+}: {
+  movs: Movimiento[];
+  isLoading: boolean;
+  responsables: Record<string, string>;
+}) {
+  const qc = useQueryClient();
+  const [periodo, setPeriodo] = useState(trimestreAnterior(hoyISO()));
+  const [mensaje, setMensaje] = useState<string | null>(null);
+  const [errorDef, setErrorDef] = useState<string | null>(null);
+  const llevar = useMutation({
+    mutationFn: (ids: string[]) => llevarNoDeducibleDefinitivo(ids, periodo, hoyISO()),
+    onSuccess: (_d, ids) => {
+      setErrorDef(null);
+      setMensaje(
+        `Listo: ${ids.length} gasto${ids.length === 1 ? "" : "s"} pasaron a No deducible definitivo (${trimestreLabel(periodo)}). Ya no salen en pendientes; míralos en "Control anual".`,
+      );
+      void qc.invalidateQueries({ queryKey: movimientosQuery.queryKey });
+    },
+    onError: () => {
+      setMensaje(null);
+      setErrorDef("No se pudo guardar. Revisa que ya corriste el SQL de la migración y vuelve a intentar.");
+    },
+  });
+  const anioHoy = new Date().getFullYear();
+  const periodosOpc = [anioHoy - 1, anioHoy].flatMap((a) =>
+    ["T1", "T2", "T3", "T4"].map((t) => `${a}-${t}`),
+  );
 
   const [clasifFiltro, setClasifFiltro] = useState<"" | "no_deducible" | "probable">("");
   const [trimestreFiltro, setTrimestreFiltro] = useState("");
@@ -132,6 +168,17 @@ export default function Fiscal() {
       (!mesFiltro || (mesDe(m.fecha) ?? "") <= mesFiltro),
   );
   const totalActa = gastosActa.reduce((s, m) => s + Number(m.valor), 0);
+  // Solo lo Pendiente se puede llevar definitivo (no se pisa lo ya Legalizado).
+  const gastosDefinitivos = gastosActa.filter((m) => m.estado === "Pendiente");
+  const excluidos = gastosActa.length - gastosDefinitivos.length;
+  const totalDefinitivo = gastosDefinitivos.reduce((s, m) => s + Number(m.valor), 0);
+
+  function pedirDefinitivo() {
+    const ok = window.confirm(
+      `¿Llevar a No deducible DEFINITIVO?\n\n${gastosDefinitivos.length} gasto(s) · ${formatCOP(totalDefinitivo)}\nPeriodo: ${trimestreLabel(periodo)}\n\nDejarán de aparecer en pendientes y quedarán en el Control anual. Puedes devolverlos después si te equivocas.`,
+    );
+    if (ok) llevar.mutate(gastosDefinitivos.map((m) => m.id));
+  }
 
   async function exportarActa() {
     setErrorPDF(null);
@@ -165,9 +212,7 @@ export default function Fiscal() {
   const countProbable = filtrados.filter((m) => m.clasificacion_fiscal === "probable").length;
 
   return (
-    <AppShell>
-      <h1 className="mb-4 text-[18px] font-semibold tracking-tight">Dashboard fiscal trimestral</h1>
-
+    <>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <Metric label="Gastos no deducibles" value={String(countNoDeducible)} tone="destructive" />
         <Metric label="Valor no deducible" value={formatCOP(totalNoDeducible)} tone="destructive" />
@@ -250,6 +295,48 @@ export default function Fiscal() {
             {errorPDF ? <p className="mt-1 text-[12px] text-destructive">{errorPDF}</p> : null}
           </div>
 
+          <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+            <p className="mb-2 text-[12px] font-semibold uppercase tracking-wide text-destructive">
+              Llevar a no deducible definitivo
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <label className="text-[13px] text-muted-foreground" htmlFor="periodo-def">
+                Periodo del envío
+              </label>
+              <select
+                id="periodo-def"
+                className={inputCls}
+                value={periodo}
+                onChange={(e) => setPeriodo(e.target.value)}
+              >
+                {periodosOpc.map((p) => (
+                  <option key={p} value={p}>
+                    {trimestreLabel(p)}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                disabled={llevar.isPending || gastosDefinitivos.length === 0}
+                onClick={pedirDefinitivo}
+                className="rounded bg-destructive px-3 py-1.5 text-[13px] font-semibold text-destructive-foreground transition-opacity disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                {llevar.isPending
+                  ? "Guardando…"
+                  : `Llevar a no deducible definitivo (${gastosDefinitivos.length} · ${formatCOP(totalDefinitivo)})`}
+              </button>
+            </div>
+            <p className="mt-2 text-[12px] text-muted-foreground">
+              Aplica a los No deducible pendientes que cumplen los filtros de arriba (los mismos del PDF).
+              Salen de pendientes y quedan guardados en "Control anual".
+              {excluidos > 0
+                ? ` ${excluidos} ya legalizado${excluidos === 1 ? "" : "s"} no se incluye${excluidos === 1 ? "" : "n"}.`
+                : ""}
+            </p>
+            {mensaje ? <p className="mt-1 text-[12px] font-medium text-success">{mensaje}</p> : null}
+            {errorDef ? <p className="mt-1 text-[12px] text-destructive">{errorDef}</p> : null}
+          </div>
+
           {isLoading ? (
             <p className="text-muted-foreground">Cargando…</p>
           ) : filas.length === 0 ? (
@@ -314,6 +401,42 @@ export default function Fiscal() {
           )}
         </Card>
       </div>
+    </>
+  );
+}
+
+export default function Fiscal() {
+  const { data, isLoading } = useQuery(movimientosQuery);
+  const { data: responsables = {} } = useQuery(responsablesQuery);
+  const movs = data ?? [];
+  const [tab, setTab] = useState<"definir" | "anual">("definir");
+
+  const definitivos = movs.filter((m) => m.tipo === "Consumo" && m.estado === "No deducible");
+  const activos = movs.filter((m) => m.estado !== "No deducible");
+
+  const tabCls = (activa: boolean) =>
+    `rounded px-3 py-1.5 text-[13px] font-semibold transition-colors ${
+      activa ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:text-foreground"
+    }`;
+
+  return (
+    <AppShell>
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-[18px] font-semibold tracking-tight">Fiscal</h1>
+        <div className="flex gap-1">
+          <button type="button" className={tabCls(tab === "definir")} onClick={() => setTab("definir")}>
+            Por definir
+          </button>
+          <button type="button" className={tabCls(tab === "anual")} onClick={() => setTab("anual")}>
+            Control anual ({definitivos.length})
+          </button>
+        </div>
+      </div>
+      {tab === "definir" ? (
+        <PorDefinir movs={activos} isLoading={isLoading} responsables={responsables} />
+      ) : (
+        <ControlAnual definitivos={definitivos} responsables={responsables} />
+      )}
     </AppShell>
   );
 }

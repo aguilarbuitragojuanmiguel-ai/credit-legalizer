@@ -70,7 +70,7 @@ export const PALABRAS_BANCARIAS = [
 ];
 
 export type Tipo = "Consumo" | "Movimiento Bancario";
-export type Estado = "Pendiente" | "Legalizado" | "N/A";
+export type Estado = "Pendiente" | "Legalizado" | "N/A" | "No deducible";
 export type ClasificacionFiscal = "no_deducible" | "probable" | null;
 
 /** "2026-08-21" -> "2026-T3" */
@@ -82,6 +82,16 @@ export function trimestreDe(fechaISO: string | null | undefined): string | null 
   const mes = Number(m[2]);
   const t = Math.ceil(mes / 3);
   return `${anio}-T${t}`;
+}
+
+/** Trimestre anterior al de la fecha: "2026-10-15" -> "2026-T3"; "2026-02-01" -> "2025-T4" */
+export function trimestreAnterior(fechaISO: string): string {
+  const k = trimestreDe(fechaISO);
+  const m = k?.match(/^(\d{4})-T(\d)$/);
+  if (!m) return "";
+  const anio = Number(m[1]);
+  const t = Number(m[2]);
+  return t === 1 ? `${anio - 1}-T4` : `${anio}-T${t - 1}`;
 }
 
 /** "2026-T3" -> "T3 2026" */

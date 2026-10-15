@@ -5,6 +5,7 @@ import { AppShell, Card, EstadoPill } from "@/components/AppShell";
 import { formatCOP, formatFecha, hoyISO, type ClasificacionFiscal, type Tipo } from "@/lib/format";
 import {
   actualizarMovimiento,
+  devolverAPendientes,
   eliminarMovimiento,
   marcarLegalizados,
   claveTC,
@@ -95,6 +96,11 @@ export default function Movimientos() {
     },
   });
 
+  const devolver = useMutation({
+    mutationFn: async (id: string) => devolverAPendientes([id]),
+    onSuccess: invalidar,
+  });
+
   function pedirEliminar(m: Movimiento) {
     const ok = window.confirm(
       `¿Eliminar este movimiento para siempre?\n\nTC ${m.tc} · ${formatFecha(m.fecha)}\n${m.descripcion}\n${formatCOP(m.valor)}\nEstado: ${m.estado}\n\nEsta acción no se puede deshacer.`,
@@ -149,6 +155,7 @@ export default function Movimientos() {
             <option value="Pendiente">Pendiente</option>
             <option value="Legalizado">Legalizado</option>
             <option value="N/A">N/A</option>
+            <option value="No deducible">No deducible</option>
           </select>
           <select
             className={inputCls}
@@ -283,7 +290,28 @@ export default function Movimientos() {
                         ) : null}
                       </td>
                       <td className="px-3 py-2">
-                        {m.tipo === "Consumo" ? (
+                        {m.estado === "No deducible" ? (
+                          <div className="flex flex-wrap items-center gap-2 text-[12px]">
+                            <span className="font-semibold text-destructive">
+                              Definitivo{m.periodo_no_deducible ? ` · ${m.periodo_no_deducible}` : ""}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={devolver.isPending}
+                              onClick={() => {
+                                if (
+                                  window.confirm(
+                                    "¿Devolver este gasto a Pendientes? Dejará de contar como enviado a no deducible.",
+                                  )
+                                )
+                                  devolver.mutate(m.id);
+                              }}
+                              className="font-medium text-muted-foreground underline hover:text-foreground"
+                            >
+                              Devolver
+                            </button>
+                          </div>
+                        ) : m.tipo === "Consumo" ? (
                           <div className="flex flex-wrap items-center gap-1">
                             <button
                               type="button"

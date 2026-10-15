@@ -19,6 +19,8 @@ export type Movimiento = {
   trm: number | null;
   soporte_listo: boolean;
   clasificacion_fiscal: ClasificacionFiscal;
+  fecha_no_deducible: string | null;
+  periodo_no_deducible: string | null;
   created_at: string;
 };
 
@@ -65,6 +67,38 @@ export async function actualizarMovimiento(id: string, patch: Record<string, unk
 export async function eliminarMovimiento(id: string) {
   const { error } = await supabase.from("movimientos").delete().eq("id", id);
   if (error) throw error;
+}
+
+const LOTE = 100;
+
+/** Pasa movimientos a estado "No deducible" (definitivo), con fecha de envío y periodo ("2026-T2"). */
+export async function llevarNoDeducibleDefinitivo(ids: string[], periodo: string, fecha: string) {
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const { error } = await supabase
+      .from("movimientos")
+      .update({
+        estado: "No deducible",
+        fecha_no_deducible: fecha,
+        periodo_no_deducible: periodo,
+      } as never)
+      .in("id", ids.slice(i, i + LOTE));
+    if (error) throw error;
+  }
+}
+
+/** Revierte un envío a No deducible: vuelve a Pendiente (conserva la marca No deducible). */
+export async function devolverAPendientes(ids: string[]) {
+  for (let i = 0; i < ids.length; i += LOTE) {
+    const { error } = await supabase
+      .from("movimientos")
+      .update({
+        estado: "Pendiente",
+        fecha_no_deducible: null,
+        periodo_no_deducible: null,
+      } as never)
+      .in("id", ids.slice(i, i + LOTE));
+    if (error) throw error;
+  }
 }
 
 export async function marcarLegalizados(ids: string[], fecha: string) {
