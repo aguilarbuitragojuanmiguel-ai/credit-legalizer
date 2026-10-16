@@ -27,6 +27,7 @@ export default function Movimientos() {
   const [estadoFiltro, setEstadoFiltro] = useState("");
   const [soporteFiltro, setSoporteFiltro] = useState("");
   const [fiscalFiltro, setFiscalFiltro] = useState("");
+  const [monedaFiltro, setMonedaFiltro] = useState("");
   const [busqueda, setBusqueda] = useState("");
   const [seleccion, setSeleccion] = useState<Record<string, boolean>>({});
 
@@ -46,6 +47,7 @@ export default function Movimientos() {
         (!fiscalFiltro ||
           (fiscalFiltro === "sin" && !m.clasificacion_fiscal) ||
           m.clasificacion_fiscal === fiscalFiltro) &&
+        (!monedaFiltro || (m.moneda || "COP") === monedaFiltro) &&
         (!busqueda || m.descripcion.toLowerCase().includes(busqueda.toLowerCase())),
     )
     .sort((a, b) => +new Date(a.fecha) - +new Date(b.fecha));
@@ -176,6 +178,15 @@ export default function Movimientos() {
             <option value="probable">Probable</option>
             <option value="sin">Sin clasificar</option>
           </select>
+          <select
+            className={inputCls}
+            value={monedaFiltro}
+            onChange={(e) => setMonedaFiltro(e.target.value)}
+          >
+            <option value="">Moneda: todas</option>
+            <option value="USD">Salió en USD (con TRM)</option>
+            <option value="COP">Salió en pesos</option>
+          </select>
           <input
             className={`${inputCls} min-w-[220px] flex-1`}
             placeholder="Buscar en la descripción…"
@@ -217,6 +228,7 @@ export default function Movimientos() {
                   <th className="px-3 py-2 font-semibold">Fecha</th>
                   <th className="px-3 py-2 font-semibold">Descripción</th>
                   <th className="px-3 py-2 text-right font-semibold">Valor</th>
+                  <th className="px-3 py-2 font-semibold">Moneda extracto</th>
                   <th className="px-3 py-2 font-semibold">Tipo</th>
                   <th className="px-3 py-2 font-semibold">Estado</th>
                   <th className="w-16 px-3 py-2 text-center font-semibold">Soporte</th>
@@ -254,6 +266,24 @@ export default function Movimientos() {
                       <td className="px-3 py-2 tabular-nums">{formatFecha(m.fecha)}</td>
                       <td className="max-w-[320px] px-3 py-2">{m.descripcion}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{formatCOP(m.valor)}</td>
+                      <td className="px-3 py-2 text-[12px]">
+                        {m.moneda === "USD" ? (
+                          <span
+                            className="inline-block rounded-full bg-primary/10 px-2 py-0.5 font-semibold text-primary"
+                            title="En el extracto salió en dólares; se convirtió a pesos con la TRM"
+                          >
+                            USD
+                            {m.valor_original != null
+                              ? ` ${Number(m.valor_original).toLocaleString("es-CO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+                              : ""}
+                            {m.trm
+                              ? ` × ${Number(m.trm).toLocaleString("es-CO", { maximumFractionDigits: 2 })}`
+                              : " · sin TRM"}
+                          </span>
+                        ) : (
+                          <span className="text-muted-foreground">Pesos</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2">
                         <select
                           className={inputCls}
