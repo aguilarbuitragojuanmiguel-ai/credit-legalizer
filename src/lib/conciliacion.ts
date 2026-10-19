@@ -24,6 +24,10 @@ export type ItemConciliacion = {
   valorMoneda: number;
   movId: string | null;
   nota?: string;
+  /** Estado del movimiento en la app (Legalizado, Pendiente, ...) */
+  estado?: string;
+  /** true = suma al cuadre (ya está contabilizado) */
+  suma?: boolean;
 };
 
 export type ResultadoCuenta = {
@@ -38,6 +42,8 @@ export type ResultadoCuenta = {
   conciliados: number;
   /** Egresos pendientes por aplicar (en libros, no en extracto) */
   pendientesPorAplicar: ItemConciliacion[];
+  /** Todo lo que está en la app y no en el extracto (legalizado o pendiente), con nota del estado */
+  enAppSinExtracto: ItemConciliacion[];
   /** Gastos del extracto aún sin contabilizar (Pendientes en la app) */
   sinContabilizar: ItemConciliacion[];
   /** Líneas del extracto sin movimiento en la app */
@@ -142,6 +148,7 @@ function construir(
     trmCorte: null,
     conciliados: 0,
     pendientesPorAplicar: [],
+    enAppSinExtracto: [],
     sinContabilizar: [],
     sinMovimientoApp: [],
     totalPendientes: 0,
@@ -261,6 +268,27 @@ function construir(
     }))
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
 
+  const enAppSinExtracto: ItemConciliacion[] = candidatos
+    .filter((m) => !usadoMov.has(m.id) && m.fecha >= inicioPeriodo)
+    .map((m) => {
+      const suma = contabilizado(m) && m.estado !== "N/A";
+      return {
+        fecha: m.fecha,
+        descripcion: m.descripcion,
+        valor: Number(m.valor),
+        valorMoneda: esUSD ? Number(m.valor_original ?? 0) : Number(m.valor),
+        movId: m.id,
+        estado: m.estado,
+        suma,
+        nota: suma
+          ? `Ya está ${m.estado === "No deducible" ? "legalizado (no deducible)" : "legalizado"}`
+          : m.estado === "N/A"
+            ? "Marcado N/A (no suma al cuadre)"
+            : "Pendiente de legalizar (no suma al cuadre)",
+      };
+    })
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+
   const totalPendientes = pendientesPorAplicar.reduce((s, x) => s + x.valor, 0);
   const totalSinContabilizar =
     sinContabilizar.reduce((s, x) => s + x.valor, 0) +
@@ -288,6 +316,7 @@ function construir(
     trmCorte,
     conciliados,
     pendientesPorAplicar,
+    enAppSinExtracto,
     sinContabilizar,
     sinMovimientoApp,
     totalPendientes: r2(totalPendientes),

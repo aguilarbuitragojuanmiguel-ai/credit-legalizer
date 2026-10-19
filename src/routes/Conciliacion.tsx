@@ -450,7 +450,17 @@ function EstadoConc({ estado }: { estado: ResultadoCuenta["estado"] }) {
   );
 }
 
-function ListaItems({ titulo, items, esUSD }: { titulo: string; items: ItemConciliacion[]; esUSD: boolean }) {
+function ListaItems({
+  titulo,
+  items,
+  esUSD,
+  resaltarSuma = false,
+}: {
+  titulo: string;
+  items: ItemConciliacion[];
+  esUSD: boolean;
+  resaltarSuma?: boolean;
+}) {
   return (
     <div>
       <p className="mb-1 font-semibold">
@@ -466,7 +476,20 @@ function ListaItems({ titulo, items, esUSD }: { titulo: string; items: ItemConci
                 <td className="px-2 py-1 tabular-nums">{formatFecha(i.fecha)}</td>
                 <td className="px-2 py-1">
                   {i.descripcion}
-                  {i.nota ? <span className="text-muted-foreground"> · {i.nota}</span> : null}
+                  {i.nota ? (
+                    <span
+                      className={
+                        resaltarSuma && i.suma === false
+                          ? "text-warning"
+                          : resaltarSuma
+                            ? "text-success"
+                            : "text-muted-foreground"
+                      }
+                    >
+                      {" "}
+                      · {i.nota}
+                    </span>
+                  ) : null}
                 </td>
                 <td className="px-2 py-1 text-right tabular-nums">
                   {esUSD ? `${usd(i.valorMoneda)} → ` : ""}
@@ -519,7 +542,21 @@ function Detalle({ r }: { r: ResultadoCuenta }) {
       <p className="text-muted-foreground">
         {r.conciliados} línea(s) del extracto ya están contabilizadas y cruzan con la app.
       </p>
-      <ListaItems titulo="Egresos pendientes por aplicar (en libros, no en el extracto)" items={r.pendientesPorAplicar} esUSD={esUSD} />
+      <ListaItems
+        titulo="En la app pero no en el extracto (legalizados y pendientes)"
+        items={r.enAppSinExtracto}
+        esUSD={esUSD}
+        resaltarSuma
+      />
+      <p className="text-muted-foreground">
+        Suman al cuadre (ya legalizados): <strong>{formatCOP(r.totalPendientes)}</strong> · No suman
+        (pendientes o N/A):{" "}
+        <strong>
+          {formatCOP(
+            r.enAppSinExtracto.filter((i) => !i.suma).reduce((s, i) => s + i.valor, 0),
+          )}
+        </strong>
+      </p>
       <ListaItems titulo="Gastos del extracto sin contabilizar (siguen Pendientes)" items={r.sinContabilizar} esUSD={esUSD} />
       <ListaItems titulo="En el extracto pero sin movimiento en la app" items={r.sinMovimientoApp} esUSD={esUSD} />
     </div>
