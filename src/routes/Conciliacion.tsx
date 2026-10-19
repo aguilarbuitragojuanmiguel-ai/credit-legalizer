@@ -57,6 +57,7 @@ function Contenido() {
   const [abierta, setAbierta] = useState<string | null>(null);
   // Cambiar esta clave limpia lo que haya en las cajas de subir archivos
   const [reinicio, setReinicio] = useState(0);
+  const [inicioApp, setInicioApp] = useState("2026-09-01");
 
   const cuentasQ = useQuery(cuentasTCQuery);
   const librosQ = useQuery(saldosLibrosQuery);
@@ -98,9 +99,10 @@ function Contenido() {
           extractos,
           movs: movsQ.data ?? [],
           trm: trmQ.data ?? {},
+          inicioApp,
         }),
       ),
-    [cuentas, periodo, librosQ.data, extractos, movsQ.data, trmQ.data],
+    [cuentas, periodo, librosQ.data, extractos, movsQ.data, trmQ.data, inicioApp],
   );
 
   const refrescar = () => {
@@ -117,6 +119,13 @@ function Contenido() {
           className={inputCls}
           value={periodo}
           onChange={(e) => e.target.value && setPeriodo(e.target.value)}
+        />
+        <label className="ml-4 text-[13px] font-semibold">La app empezó el</label>
+        <input
+          type="date"
+          className={inputCls}
+          value={inicioApp}
+          onChange={(e) => e.target.value && setInicioApp(e.target.value)}
         />
       </div>
 

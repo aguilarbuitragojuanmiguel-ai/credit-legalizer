@@ -112,8 +112,11 @@ export function conciliarCuenta(args: {
   movs: Movimiento[];
   /** TRM por fecha ISO (solo cuentas USD) */
   trm: Record<string, number | null>;
+  /** Fecha desde la que la app tiene movimientos (lo anterior ya estaba en libros) */
+  inicioApp?: string;
 }): ResultadoCuenta {
   const { cuenta, periodo, movs } = args;
+  const inicioApp = args.inicioApp ?? "2026-09-01";
   const avisos: string[] = [];
   const claves = new Set([claveTC(cuenta.tc), claveTC(cuenta.tc_alias ?? "")].filter(Boolean));
 
@@ -284,8 +287,11 @@ function construir(
         valor: pesosLinea(l.valor, l.fecha),
         valorMoneda: l.valor,
         movId: null,
-        nota: "Está en el extracto pero no en la app",
-        suma: true,
+        nota:
+          l.fecha < inicioApp
+            ? "Anterior al inicio de la app: ya estaba en libros, no suma al cuadre"
+            : "Está en el extracto pero no en la app",
+        suma: l.fecha >= inicioApp,
         grupo: "extracto",
       });
     }
