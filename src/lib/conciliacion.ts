@@ -305,7 +305,11 @@ function construir(
     esBancarioApp(m) && /\b(PAGO|ABONO)\b/i.test(m.descripcion);
   const aItem = (m: Movimiento): ItemConciliacion => {
     const pago = esPagoApp(m);
-    const bancario = !pago && (esBancarioApp(m) || m.estado === "N/A");
+    // 4x1000 / GMF: el extracto los agrupa en una sola línea hasta el corte;
+    // los posteriores al corte ya están en libros y no en el extracto → suman.
+    const gmf = !pago && esBancarioApp(m) && /4\s*X\s*1000|4\s*X\s*MIL|\bGMF\b/i.test(m.descripcion);
+    const gmfDespuesCorte = gmf && m.fecha > extracto.fecha_corte;
+    const bancario = !pago && !gmfDespuesCorte && (esBancarioApp(m) || m.estado === "N/A");
     const suma = !pago && !bancario;
     return {
       fecha: m.fecha,
@@ -319,11 +323,15 @@ function construir(
       nota: pago
         ? "Pago a la tarjeta en la app, aún no está en el extracto (resta al cuadre)"
         : bancario
-          ? esBancarioApp(m)
+          ? gmf
+            ? "4x1000 hasta el corte: el extracto lo agrupa en la línea GMF (no suma)"
+            : esBancarioApp(m)
             ? "Nota bancaria de la app, no está en el extracto (no suma al cuadre)"
             : "Marcado N/A (no suma al cuadre)"
           : suma
-            ? m.estado === "Pendiente"
+            ? gmfDespuesCorte
+              ? "4x1000 posterior al corte: ya está en libros, no en el extracto (suma al cuadre)"
+              : m.estado === "Pendiente"
               ? "Pendiente de legalizar (ya está en libros como pendiente: suma al cuadre)"
               : `Ya está ${m.estado === "No deducible" ? "legalizado (no deducible)" : "legalizado"}`
             : "",
