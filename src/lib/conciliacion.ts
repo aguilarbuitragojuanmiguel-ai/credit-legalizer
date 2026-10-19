@@ -173,6 +173,10 @@ function construir(
     avisos,
   };
   if (libros === null) avisos.push("Falta el saldo de libros de este período (sube el balance).");
+  if (libros !== null && libros < 0)
+    avisos.push(
+      "El balance trae esta tarjeta con saldo DEUDOR (positivo): una TC debería quedar con saldo en contra (negativo). Revisa si algún movimiento se contabilizó con el signo invertido o si hay un sobrepago.",
+    );
   if (!extracto) {
     avisos.push("Falta el extracto de este período para esta cuenta.");
     return vacio;
