@@ -54,6 +54,7 @@ type Tabla = {
   select: (cols: string) => Resp<Record<string, unknown>[]>;
   upsert: (rows: unknown, opts?: { onConflict: string }) => Promise<{ error: Error | null }>;
   delete: () => Borrado;
+  update: (vals: Record<string, unknown>) => Borrado;
 };
 const tabla = (n: string) => (supabase as unknown as { from: (n: string) => Tabla }).from(n);
 
@@ -164,4 +165,17 @@ export async function reiniciarPeriodo(periodo: string) {
   if (r1.error) throw r1.error;
   const r2 = await tabla("extractos").delete().gte("fecha_corte", inicio).lte("fecha_corte", fin);
   if (r2.error) throw r2.error;
+}
+
+/**
+ * Cambia el signo del saldo de libros de una cuenta en un período (por si el
+ * balance trae esa TC con el signo al revés para conciliar). Solo toca esa fila
+ * de saldos_libros; volver a subir el balance la deja como venía.
+ */
+export async function invertirSignoLibros(periodo: string, cuenta: string, saldoFinalNuevo: number) {
+  const { error } = await tabla("saldos_libros")
+    .update({ saldo_final: saldoFinalNuevo })
+    .eq("periodo", periodo)
+    .eq("cuenta", cuenta);
+  if (error) throw error;
 }

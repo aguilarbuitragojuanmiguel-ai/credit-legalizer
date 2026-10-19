@@ -9,6 +9,7 @@ import {
   borrarExtracto,
   guardarExtracto,
   guardarSaldosLibros,
+  invertirSignoLibros,
   reiniciarPeriodo,
   saldosLibrosQuery,
 } from "@/lib/conciliacion-db";
@@ -631,6 +632,25 @@ function ListaItems({
 
 function Detalle({ r }: { r: ResultadoCuenta }) {
   const esUSD = r.cuenta.moneda === "USD";
+  const qc = useQueryClient();
+  const [editando, setEditando] = useState(false);
+  const cambiarSigno = async () => {
+    if (r.libros === null || r.libros === 0) return;
+    if (
+      !window.confirm(
+        `¿Cambiar el signo del saldo de libros de ${r.cuenta.cuenta}? Pasa de ${formatCOP(r.libros)} a ${formatCOP(-r.libros)} solo para la conciliación de ${r.periodo}. Si vuelves a subir el balance queda como venía.`,
+      )
+    )
+      return;
+    setEditando(true);
+    try {
+      // libros = 0 − saldo_final, así que el nuevo saldo_final es igual al libros actual
+      await invertirSignoLibros(r.periodo, r.cuenta.cuenta, r.libros);
+      await qc.invalidateQueries({ queryKey: saldosLibrosQuery.queryKey });
+    } finally {
+      setEditando(false);
+    }
+  };
   return (
     <div className="space-y-4 text-[13px]">
       <p className="font-semibold">
@@ -639,7 +659,19 @@ function Detalle({ r }: { r: ResultadoCuenta }) {
       </p>
 
       <div className="grid max-w-[560px] grid-cols-[1fr_auto] gap-x-6 gap-y-1">
-        <span>Saldo según libros</span>
+        <span>
+          Saldo según libros{" "}
+          {r.libros !== null && r.libros !== 0 ? (
+            <button
+              type="button"
+              disabled={editando}
+              onClick={() => void cambiarSigno()}
+              className="ml-1 rounded border border-border px-1.5 py-0.5 text-[11px] hover:bg-muted"
+            >
+              {editando ? "Guardando…" : "Editar signo"}
+            </button>
+          ) : null}
+        </span>
         <span className="text-right tabular-nums">{r.libros === null ? "—" : formatCOP(r.libros)}</span>
         <span>
           Saldo según extracto
