@@ -252,7 +252,8 @@ function construir(
     if (m) {
       if (bancariaExt) {
         conciliadosBancarios += 1;
-      } else if (contabilizado(m)) {
+      } else if (contabilizado(m) || m.estado === "Pendiente") {
+        // Pendiente de legalizar también está en libros (cuenta de ajuste): cuenta como cruzado
         conciliados += 1;
       } else {
         sinContabilizar.push({
@@ -305,7 +306,7 @@ function construir(
   const aItem = (m: Movimiento): ItemConciliacion => {
     const pago = esPagoApp(m);
     const bancario = !pago && (esBancarioApp(m) || m.estado === "N/A");
-    const suma = !pago && !bancario && contabilizado(m);
+    const suma = !pago && !bancario;
     return {
       fecha: m.fecha,
       descripcion: m.descripcion,
@@ -314,7 +315,7 @@ function construir(
       movId: m.id,
       estado: m.estado,
       suma,
-      grupo: pago ? "pago" : bancario ? "bancario" : suma ? "legalizado" : "pendiente",
+      grupo: pago ? "pago" : bancario ? "bancario" : "legalizado",
       nota: pago
         ? "Pago a la tarjeta en la app, aún no está en el extracto (resta al cuadre)"
         : bancario
@@ -322,8 +323,10 @@ function construir(
             ? "Nota bancaria de la app, no está en el extracto (no suma al cuadre)"
             : "Marcado N/A (no suma al cuadre)"
           : suma
-            ? `Ya está ${m.estado === "No deducible" ? "legalizado (no deducible)" : "legalizado"}`
-            : "Pendiente de legalizar (no suma al cuadre)",
+            ? m.estado === "Pendiente"
+              ? "Pendiente de legalizar (ya está en libros como pendiente: suma al cuadre)"
+              : `Ya está ${m.estado === "No deducible" ? "legalizado (no deducible)" : "legalizado"}`
+            : "",
     };
   };
   const enAppSinExtracto = sobrantes
