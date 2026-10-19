@@ -4,6 +4,7 @@ import Resumen from "./routes/Resumen";
 import Movimientos from "./routes/Movimientos";
 import Subir from "./routes/Subir";
 import Fiscal from "./routes/Fiscal";
+import Conciliacion from "./routes/Conciliacion";
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -47,7 +48,19 @@ const fiscalRoute = createRoute({
   component: Fiscal,
 });
 
-const routeTree = rootRoute.addChildren([resumenRoute, movimientosRoute, subirRoute, fiscalRoute]);
+const conciliacionRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/conciliacion",
+  component: Conciliacion,
+});
+
+const routeTree = rootRoute.addChildren([
+  resumenRoute,
+  movimientosRoute,
+  subirRoute,
+  fiscalRoute,
+  conciliacionRoute,
+]);
 
 export const router = createRouter({ routeTree });
 

@@ -8,6 +8,7 @@ const nav = [
   { to: "/movimientos", label: "Movimientos" },
   { to: "/subir", label: "Subir soporte" },
   { to: "/fiscal", label: "Fiscal" },
+  { to: "/conciliacion", label: "Conciliación" },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
