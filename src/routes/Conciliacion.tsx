@@ -499,6 +499,7 @@ function TablaResumen({
               <th className="px-2 py-2 text-right">Extracto</th>
               <th className="px-2 py-2 text-right">+ Pend. por aplicar</th>
               <th className="px-2 py-2 text-right">− Sin contabilizar</th>
+              <th className="px-2 py-2 text-right">− Pagos en tránsito</th>
               <th className="px-2 py-2 text-right">Diferencia</th>
               <th className="px-2 py-2">Estado</th>
             </tr>
@@ -524,6 +525,7 @@ function TablaResumen({
                   </td>
                   <td className="px-2 py-2 text-right tabular-nums">{formatCOP(r.totalPendientes)}</td>
                   <td className="px-2 py-2 text-right tabular-nums">{formatCOP(r.totalSinContabilizar)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{formatCOP(r.totalPagosTransito)}</td>
                   <td className="px-2 py-2 text-right font-semibold tabular-nums">
                     {r.diferencia === null ? "—" : formatCOP(r.diferencia)}
                   </td>
@@ -533,7 +535,7 @@ function TablaResumen({
                 </tr>
                 {abierta === r.cuenta.cuenta ? (
                   <tr className="border-b border-border bg-muted/30">
-                    <td colSpan={9} className="px-3 py-3">
+                    <td colSpan={10} className="px-3 py-3">
                       <Detalle r={r} />
                     </td>
                   </tr>
@@ -591,7 +593,9 @@ function ListaItems({
                   {i.nota ? (
                     <span
                       className={
-                        resaltarSuma && i.suma === false
+                        resaltarSuma && i.grupo === "pago"
+                          ? "text-primary"
+                          : resaltarSuma && i.suma === false
                           ? "text-warning"
                           : resaltarSuma
                             ? "text-success"
@@ -639,6 +643,8 @@ function Detalle({ r }: { r: ResultadoCuenta }) {
         <span className="text-right tabular-nums">{formatCOP(r.totalPendientes)}</span>
         <span>− Gastos del extracto sin contabilizar</span>
         <span className="text-right tabular-nums">{formatCOP(r.totalSinContabilizar)}</span>
+        <span>− Pagos en libros que aún no salen en el extracto</span>
+        <span className="text-right tabular-nums">{formatCOP(r.totalPagosTransito)}</span>
         <span className="font-semibold">Diferencia sin explicar</span>
         <span className="text-right font-semibold tabular-nums">
           {r.diferencia === null ? "—" : formatCOP(r.diferencia)}
@@ -668,11 +674,14 @@ function Detalle({ r }: { r: ResultadoCuenta }) {
         resaltarSuma
       />
       <p className="text-muted-foreground">
-        Suman al cuadre (ya legalizados): <strong>{formatCOP(r.totalPendientes)}</strong> · No suman
-        (pendientes, N/A, notas y pagos bancarios):{" "}
+        Suman al cuadre (ya legalizados): <strong>{formatCOP(r.totalPendientes)}</strong> · Restan
+        (pagos en tránsito): <strong>{formatCOP(r.totalPagosTransito)}</strong> · No suman
+        (pendientes, N/A y notas bancarias):{" "}
         <strong>
           {formatCOP(
-            r.enAppSinExtracto.filter((i) => !i.suma).reduce((s, i) => s + i.valor, 0),
+            r.enAppSinExtracto
+              .filter((i) => i.grupo === "pendiente" || i.grupo === "bancario")
+              .reduce((s, i) => s + i.valor, 0),
           )}
         </strong>
       </p>

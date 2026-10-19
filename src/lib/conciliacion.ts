@@ -29,7 +29,7 @@ export type ItemConciliacion = {
   /** true = suma al cuadre (ya está contabilizado) */
   suma?: boolean;
   /** legalizado / pendiente / bancario (nota o pago de la app) / extracto (línea del PDF) */
-  grupo?: "legalizado" | "pendiente" | "bancario" | "extracto";
+  grupo?: "legalizado" | "pendiente" | "bancario" | "pago" | "extracto";
 };
 
 export type ResultadoCuenta = {
@@ -56,7 +56,9 @@ export type ResultadoCuenta = {
   sinMovimientoApp: ItemConciliacion[];
   totalPendientes: number;
   totalSinContabilizar: number;
-  /** libros − (extracto + pendientes − sin contabilizar) */
+  /** Pagos a la TC que están en libros y todavía no en el extracto (restan) */
+  totalPagosTransito: number;
+  /** libros − (extracto + pendientes − sin contabilizar − pagos en tránsito) */
   diferencia: number | null;
   estado: "cuadra" | "diferencia" | "sin_datos";
   avisos: string[];
@@ -161,6 +163,7 @@ function construir(
     sinMovimientoApp: [],
     totalPendientes: 0,
     totalSinContabilizar: 0,
+    totalPagosTransito: 0,
     diferencia: null,
     estado: "sin_datos",
     avisos,
@@ -290,33 +293,40 @@ function construir(
 
   // Lo que está en la app y no en el extracto
   const sobrantes = candidatos.filter((m) => !usadoMov.has(m.id) && m.fecha >= inicioPeriodo);
+  const esPagoApp = (m: Movimiento) =>
+    esBancarioApp(m) && /\b(PAGO|ABONO)\b/i.test(m.descripcion);
   const aItem = (m: Movimiento): ItemConciliacion => {
-    const bancario = esBancarioApp(m) || m.estado === "N/A";
-    const suma = !bancario && contabilizado(m);
+    const pago = esPagoApp(m);
+    const bancario = !pago && (esBancarioApp(m) || m.estado === "N/A");
+    const suma = !pago && !bancario && contabilizado(m);
     return {
       fecha: m.fecha,
       descripcion: m.descripcion,
-      valor: Number(m.valor),
-      valorMoneda: esUSD ? Number(m.valor_original ?? 0) : Number(m.valor),
+      valor: Math.abs(Number(m.valor)),
+      valorMoneda: esUSD ? Math.abs(Number(m.valor_original ?? 0)) : Math.abs(Number(m.valor)),
       movId: m.id,
       estado: m.estado,
       suma,
-      grupo: bancario ? "bancario" : suma ? "legalizado" : "pendiente",
-      nota: bancario
-        ? esBancarioApp(m)
-          ? "Nota o pago bancario de la app, no está en el extracto (no suma al cuadre)"
-          : "Marcado N/A (no suma al cuadre)"
-        : suma
-          ? `Ya está ${m.estado === "No deducible" ? "legalizado (no deducible)" : "legalizado"}`
-          : "Pendiente de legalizar (no suma al cuadre)",
+      grupo: pago ? "pago" : bancario ? "bancario" : suma ? "legalizado" : "pendiente",
+      nota: pago
+        ? "Pago a la tarjeta en la app, aún no está en el extracto (resta al cuadre)"
+        : bancario
+          ? esBancarioApp(m)
+            ? "Nota bancaria de la app, no está en el extracto (no suma al cuadre)"
+            : "Marcado N/A (no suma al cuadre)"
+          : suma
+            ? `Ya está ${m.estado === "No deducible" ? "legalizado (no deducible)" : "legalizado"}`
+            : "Pendiente de legalizar (no suma al cuadre)",
     };
   };
   const enAppSinExtracto = sobrantes
     .map(aItem)
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
-  const pendientesPorAplicar = enAppSinExtracto.filter((i) => i.suma);
+  const pendientesPorAplicar = enAppSinExtracto.filter((i) => i.grupo === "legalizado");
+  const pagosTransito = enAppSinExtracto.filter((i) => i.grupo === "pago");
 
   const totalPendientes = pendientesPorAplicar.reduce((s, x) => s + x.valor, 0);
+  const totalPagosTransito = pagosTransito.reduce((s, x) => s + x.valor, 0);
   const totalSinContabilizar =
     sinContabilizar.reduce((s, x) => s + x.valor, 0) +
     sinMovimientoApp.filter((x) => x.suma).reduce((s, x) => s + x.valor, 0);
@@ -324,7 +334,7 @@ function construir(
   const diferencia =
     libros === null || saldoPesos === null
       ? null
-      : r2(libros - (saldoPesos + totalPendientes - totalSinContabilizar));
+      : r2(libros - (saldoPesos + totalPendientes - totalSinContabilizar - totalPagosTransito));
 
   // Pistas: ¿alguna nota, pago o cargo bancario explica justo la diferencia?
   const pistas: string[] = [];
@@ -372,6 +382,7 @@ function construir(
     sinMovimientoApp,
     totalPendientes: r2(totalPendientes),
     totalSinContabilizar: r2(totalSinContabilizar),
+    totalPagosTransito: r2(totalPagosTransito),
     diferencia,
     estado: diferencia === null ? "sin_datos" : Math.abs(diferencia) <= TOL_PESOS ? "cuadra" : "diferencia",
     avisos,
