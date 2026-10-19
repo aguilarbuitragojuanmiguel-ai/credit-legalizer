@@ -6,8 +6,10 @@ import { conciliarCuenta, type ItemConciliacion, type ResultadoCuenta } from "@/
 import {
   cuentasTCQuery,
   extractosQuery,
+  borrarExtracto,
   guardarExtracto,
   guardarSaldosLibros,
+  reiniciarPeriodo,
   saldosLibrosQuery,
 } from "@/lib/conciliacion-db";
 import { formatCOP, formatFecha, hoyISO } from "@/lib/format";
@@ -53,6 +55,8 @@ function Contenido() {
   const qc = useQueryClient();
   const [periodo, setPeriodo] = useState(mesAnterior());
   const [abierta, setAbierta] = useState<string | null>(null);
+  // Cambiar esta clave limpia lo que haya en las cajas de subir archivos
+  const [reinicio, setReinicio] = useState(0);
 
   const cuentasQ = useQuery(cuentasTCQuery);
   const librosQ = useQuery(saldosLibrosQuery);
@@ -122,8 +126,23 @@ function Contenido() {
         </p>
       ) : null}
 
-      <CargarBalance periodo={periodo} onGuardado={refrescar} onPeriodo={setPeriodo} />
-      <CargarExtractos onGuardado={refrescar} />
+      <CargarBalance
+        key={`b${reinicio}`}
+        periodo={periodo}
+        onGuardado={refrescar}
+        onPeriodo={setPeriodo}
+      />
+      <CargarExtractos key={`e${reinicio}`} onGuardado={refrescar} />
+      <Cargado
+        periodo={periodo}
+        nSaldos={(librosQ.data ?? []).filter((l) => l.periodo === periodo).length}
+        extractos={extractos.filter((e) => e.fecha_corte.startsWith(periodo))}
+        onCambio={() => {
+          refrescar();
+          setAbierta(null);
+          setReinicio((n) => n + 1);
+        }}
+      />
 
       <Card title={`Conciliación ${periodo}`}>
         <TablaResumen
@@ -134,6 +153,99 @@ function Contenido() {
         />
       </Card>
     </>
+  );
+}
+
+/* ---------- Lo ya cargado del mes + reiniciar ---------- */
+
+function Cargado({
+  periodo,
+  nSaldos,
+  extractos,
+  onCambio,
+}: {
+  periodo: string;
+  nSaldos: number;
+  extractos: { id: string; tc: string; banco: string; moneda: string; fecha_corte: string; archivo_nombre: string | null }[];
+  onCambio: () => void;
+}) {
+  const [error, setError] = useState<string | null>(null);
+
+  const reiniciar = useMutation({
+    mutationFn: () => reiniciarPeriodo(periodo),
+    onSuccess: onCambio,
+    onError: (e: Error) => setError(e.message),
+  });
+  const quitar = useMutation({
+    mutationFn: (id: string) => borrarExtracto(id),
+    onSuccess: onCambio,
+    onError: (e: Error) => setError(e.message),
+  });
+
+  const hayAlgo = nSaldos > 0 || extractos.length > 0;
+
+  return (
+    <Card title={`Cargado para ${periodo}`}>
+      {!hayAlgo ? (
+        <p className="text-[13px] text-muted-foreground">
+          Todavía no hay balance ni extractos guardados para este mes.
+        </p>
+      ) : (
+        <div className="space-y-3 text-[13px]">
+          <p>
+            Saldos de libros: <strong>{nSaldos}</strong> cuenta(s) · Extractos:{" "}
+            <strong>{extractos.length}</strong>
+          </p>
+          {extractos.length > 0 ? (
+            <ul className="space-y-1">
+              {extractos
+                .slice()
+                .sort((a, b) => a.tc.localeCompare(b.tc) || a.moneda.localeCompare(b.moneda))
+                .map((e) => (
+                  <li key={e.id} className="flex items-center gap-3">
+                    <span>
+                      {e.banco} · TC {e.tc}
+                      {e.moneda === "USD" ? " USD" : ""} · corte {formatFecha(e.fecha_corte)}
+                      {e.archivo_nombre ? (
+                        <span className="text-muted-foreground"> · {e.archivo_nombre}</span>
+                      ) : null}
+                    </span>
+                    <button
+                      type="button"
+                      className="rounded border border-border px-2 py-0.5 text-[12px] text-destructive hover:bg-destructive/10 disabled:opacity-50"
+                      disabled={quitar.isPending}
+                      onClick={() => {
+                        setError(null);
+                        if (window.confirm(`¿Quitar este extracto?\n\nTC ${e.tc} · corte ${formatFecha(e.fecha_corte)}`))
+                          quitar.mutate(e.id);
+                      }}
+                    >
+                      Quitar
+                    </button>
+                  </li>
+                ))}
+            </ul>
+          ) : null}
+          <button
+            type="button"
+            className="rounded border border-destructive px-3 py-1.5 text-[13px] font-semibold text-destructive hover:bg-destructive/10 disabled:opacity-50"
+            disabled={reiniciar.isPending}
+            onClick={() => {
+              setError(null);
+              if (
+                window.confirm(
+                  `¿Reiniciar la conciliación de ${periodo}?\n\nSe borran los saldos de libros y los ${extractos.length} extracto(s) guardados de ese mes, para que puedas subirlos de nuevo y recalcular.\n\nTus movimientos NO se tocan.`,
+                )
+              )
+                reiniciar.mutate();
+            }}
+          >
+            {reiniciar.isPending ? "Reiniciando…" : `Reiniciar ${periodo}`}
+          </button>
+        </div>
+      )}
+      {error ? <p className="mt-2 text-destructive">{error}</p> : null}
+    </Card>
   );
 }
 

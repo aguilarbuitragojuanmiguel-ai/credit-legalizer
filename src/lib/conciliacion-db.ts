@@ -45,10 +45,15 @@ export type ExtractoGuardado = {
 };
 
 type Resp<T> = Promise<{ data: T | null; error: Error | null }>;
+type Borrado = PromiseLike<{ error: Error | null }> & {
+  eq: (c: string, v: string) => Borrado;
+  gte: (c: string, v: string) => Borrado;
+  lte: (c: string, v: string) => Borrado;
+};
 type Tabla = {
   select: (cols: string) => Resp<Record<string, unknown>[]>;
   upsert: (rows: unknown, opts?: { onConflict: string }) => Promise<{ error: Error | null }>;
-  delete: () => { eq: (c: string, v: string) => Promise<{ error: Error | null }> };
+  delete: () => Borrado;
 };
 const tabla = (n: string) => (supabase as unknown as { from: (n: string) => Tabla }).from(n);
 
@@ -139,4 +144,24 @@ export async function guardarExtracto(
     { onConflict: "tc,moneda,fecha_corte" },
   );
   if (error) throw error;
+}
+
+/** Quita un extracto guardado (por si se subió el que no era). */
+export async function borrarExtracto(id: string) {
+  const { error } = await tabla("extractos").delete().eq("id", id);
+  if (error) throw error;
+}
+
+/**
+ * Reinicia la conciliación de un mes: borra los saldos de libros y los extractos
+ * de ese período. No toca movimientos ni ninguna otra tabla.
+ */
+export async function reiniciarPeriodo(periodo: string) {
+  const [a, m] = periodo.split("-").map(Number);
+  const inicio = `${periodo}-01`;
+  const fin = new Date(Date.UTC(a ?? 2000, m ?? 1, 0)).toISOString().slice(0, 10);
+  const r1 = await tabla("saldos_libros").delete().eq("periodo", periodo);
+  if (r1.error) throw r1.error;
+  const r2 = await tabla("extractos").delete().gte("fecha_corte", inicio).lte("fecha_corte", fin);
+  if (r2.error) throw r2.error;
 }
