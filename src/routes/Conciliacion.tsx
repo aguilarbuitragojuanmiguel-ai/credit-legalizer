@@ -539,8 +539,15 @@ function Detalle({ r }: { r: ResultadoCuenta }) {
         </p>
       ))}
 
+      {r.pistas.map((x) => (
+        <p key={x} className="font-semibold text-warning">
+          💡 {x}
+        </p>
+      ))}
+
       <p className="text-muted-foreground">
-        {r.conciliados} línea(s) del extracto ya están contabilizadas y cruzan con la app.
+        {r.conciliados} compra(s) y {r.conciliadosBancarios} cargo(s)/abono(s) bancario(s) del extracto
+        cruzan con la app.
       </p>
       <ListaItems
         titulo="En la app pero no en el extracto (legalizados y pendientes)"
@@ -550,7 +557,7 @@ function Detalle({ r }: { r: ResultadoCuenta }) {
       />
       <p className="text-muted-foreground">
         Suman al cuadre (ya legalizados): <strong>{formatCOP(r.totalPendientes)}</strong> · No suman
-        (pendientes o N/A):{" "}
+        (pendientes, N/A, notas y pagos bancarios):{" "}
         <strong>
           {formatCOP(
             r.enAppSinExtracto.filter((i) => !i.suma).reduce((s, i) => s + i.valor, 0),
@@ -558,7 +565,7 @@ function Detalle({ r }: { r: ResultadoCuenta }) {
         </strong>
       </p>
       <ListaItems titulo="Gastos del extracto sin contabilizar (siguen Pendientes)" items={r.sinContabilizar} esUSD={esUSD} />
-      <ListaItems titulo="En el extracto pero sin movimiento en la app" items={r.sinMovimientoApp} esUSD={esUSD} />
+      <ListaItems titulo="En el extracto pero sin movimiento en la app (compras, cargos bancarios y abonos)" items={r.sinMovimientoApp} esUSD={esUSD} />
     </div>
   );
 }

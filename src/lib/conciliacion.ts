@@ -28,6 +28,8 @@ export type ItemConciliacion = {
   estado?: string;
   /** true = suma al cuadre (ya está contabilizado) */
   suma?: boolean;
+  /** legalizado / pendiente / bancario (nota o pago de la app) / extracto (línea del PDF) */
+  grupo?: "legalizado" | "pendiente" | "bancario" | "extracto";
 };
 
 export type ResultadoCuenta = {
@@ -40,6 +42,10 @@ export type ResultadoCuenta = {
   saldoExtractoMoneda: number | null;
   trmCorte: number | null;
   conciliados: number;
+  /** Cargos bancarios y abonos del extracto que sí cruzan con la app */
+  conciliadosBancarios: number;
+  /** Pistas: partidas que explican justo la diferencia */
+  pistas: string[];
   /** Egresos pendientes por aplicar (en libros, no en extracto) */
   pendientesPorAplicar: ItemConciliacion[];
   /** Todo lo que está en la app y no en el extracto (legalizado o pendiente), con nota del estado */
@@ -147,6 +153,8 @@ function construir(
     saldoExtractoMoneda: null,
     trmCorte: null,
     conciliados: 0,
+    conciliadosBancarios: 0,
+    pistas: [],
     pendientesPorAplicar: [],
     enAppSinExtracto: [],
     sinContabilizar: [],
@@ -179,33 +187,35 @@ function construir(
     }
   }
 
-  // Movimientos de la app de esta cuenta (misma TC y misma moneda).
+  // Movimientos de la app de esta cuenta (misma TC y misma moneda), de cualquier tipo:
+  // compras, cargos bancarios y abonos. No dependemos de la etiqueta Consumo / Movimiento Bancario.
   // Para cruzar se mira un poco antes del período (el banco a veces carga después);
   // para las partidas por aplicar solo cuenta lo dentro del período facturado.
   const inicioPeriodo = extracto.periodo_desde ?? `${periodo}-01`;
   const desde = sumarDias(inicioPeriodo, -20);
   const candidatos = movs.filter(
     (m) =>
-      m.tipo === "Consumo" &&
       claves.has(claveTC(m.tc)) &&
       (m.moneda || "COP") === cuenta.moneda &&
       m.fecha >= desde &&
       m.fecha <= finMes,
   );
+  const esBancarioApp = (m: Movimiento) => m.tipo === "Movimiento Bancario";
 
-  const compras = extracto.lineas.filter((l) => l.tipo === "compra");
+  const lineas = extracto.lineas;
 
   const pares: { i: number; m: Movimiento; puntaje: number }[] = [];
-  compras.forEach((l, i) => {
+  lineas.forEach((l, i) => {
     for (const m of candidatos) {
-      const valorOk = esUSD
-        ? m.valor_original != null && Math.abs(Number(m.valor_original) - l.valor) <= 0.011
-        : Math.abs(Number(m.valor) - l.valor) < 2;
+      const vApp = Math.abs(esUSD ? Number(m.valor_original ?? Number.NaN) : Number(m.valor));
+      const vExt = Math.abs(l.valor);
+      const valorOk = esUSD ? Math.abs(vApp - vExt) <= 0.011 : Math.abs(vApp - vExt) < 2;
       if (!valorOk) continue;
       const d = dias(l.fecha, m.fecha);
       if (d > 12) continue;
       const pf = d === 0 ? 3 : d <= 3 ? 2 : 1;
-      pares.push({ i, m, puntaje: pf + puntajeDescripcion(l.descripcion, m.descripcion) });
+      const compat = (l.tipo === "compra") === !esBancarioApp(m) ? 1 : 0;
+      pares.push({ i, m, puntaje: pf + puntajeDescripcion(l.descripcion, m.descripcion) + compat });
     }
   });
   pares.sort((a, b) => b.puntaje - a.puntaje);
@@ -226,78 +236,117 @@ function construir(
   };
 
   let conciliados = 0;
+  let conciliadosBancarios = 0;
   const sinContabilizar: ItemConciliacion[] = [];
   const sinMovimientoApp: ItemConciliacion[] = [];
-  compras.forEach((l, i) => {
+  lineas.forEach((l, i) => {
     const m = asignado.get(i);
-    if (m && contabilizado(m)) {
-      conciliados += 1;
-    } else if (m) {
-      sinContabilizar.push({
-        fecha: l.fecha,
-        descripcion: l.descripcion,
-        valor: Number(m.valor),
-        valorMoneda: l.valor,
-        movId: m.id,
-        nota: "Sigue Pendiente en la app",
-      });
-    } else {
-      const v = pesosLinea(l.valor, l.fecha);
+    const bancariaExt = l.tipo !== "compra";
+    if (m) {
+      if (bancariaExt) {
+        conciliadosBancarios += 1;
+      } else if (contabilizado(m)) {
+        conciliados += 1;
+      } else {
+        sinContabilizar.push({
+          fecha: l.fecha,
+          descripcion: l.descripcion,
+          valor: Number(m.valor),
+          valorMoneda: l.valor,
+          movId: m.id,
+          nota: "Sigue Pendiente en la app",
+          grupo: "pendiente",
+        });
+      }
+    } else if (bancariaExt) {
+      // Cargo bancario o abono del extracto sin movimiento en la app: se informa,
+      // no suma al cuadre (se asume contabilizado).
       sinMovimientoApp.push({
         fecha: l.fecha,
         descripcion: l.descripcion,
-        valor: v,
+        valor: pesosLinea(l.valor, l.fecha),
+        valorMoneda: l.valor,
+        movId: null,
+        nota:
+          l.tipo === "abono"
+            ? "Abono del extracto sin movimiento en la app (no suma al cuadre)"
+            : "Cargo bancario del extracto sin movimiento en la app (no suma al cuadre)",
+        suma: false,
+        grupo: "extracto",
+      });
+    } else {
+      sinMovimientoApp.push({
+        fecha: l.fecha,
+        descripcion: l.descripcion,
+        valor: pesosLinea(l.valor, l.fecha),
         valorMoneda: l.valor,
         movId: null,
         nota: "Está en el extracto pero no en la app",
+        suma: true,
+        grupo: "extracto",
       });
     }
   });
 
-  const pendientesPorAplicar: ItemConciliacion[] = candidatos
-    .filter(
-      (m) =>
-        !usadoMov.has(m.id) && contabilizado(m) && m.estado !== "N/A" && m.fecha >= inicioPeriodo,
-    )
-    .map((m) => ({
+  // Lo que está en la app y no en el extracto
+  const sobrantes = candidatos.filter((m) => !usadoMov.has(m.id) && m.fecha >= inicioPeriodo);
+  const aItem = (m: Movimiento): ItemConciliacion => {
+    const bancario = esBancarioApp(m) || m.estado === "N/A";
+    const suma = !bancario && contabilizado(m);
+    return {
       fecha: m.fecha,
       descripcion: m.descripcion,
       valor: Number(m.valor),
       valorMoneda: esUSD ? Number(m.valor_original ?? 0) : Number(m.valor),
       movId: m.id,
-    }))
-    .sort((a, b) => a.fecha.localeCompare(b.fecha));
-
-  const enAppSinExtracto: ItemConciliacion[] = candidatos
-    .filter((m) => !usadoMov.has(m.id) && m.fecha >= inicioPeriodo)
-    .map((m) => {
-      const suma = contabilizado(m) && m.estado !== "N/A";
-      return {
-        fecha: m.fecha,
-        descripcion: m.descripcion,
-        valor: Number(m.valor),
-        valorMoneda: esUSD ? Number(m.valor_original ?? 0) : Number(m.valor),
-        movId: m.id,
-        estado: m.estado,
-        suma,
-        nota: suma
+      estado: m.estado,
+      suma,
+      grupo: bancario ? "bancario" : suma ? "legalizado" : "pendiente",
+      nota: bancario
+        ? esBancarioApp(m)
+          ? "Nota o pago bancario de la app, no está en el extracto (no suma al cuadre)"
+          : "Marcado N/A (no suma al cuadre)"
+        : suma
           ? `Ya está ${m.estado === "No deducible" ? "legalizado (no deducible)" : "legalizado"}`
-          : m.estado === "N/A"
-            ? "Marcado N/A (no suma al cuadre)"
-            : "Pendiente de legalizar (no suma al cuadre)",
-      };
-    })
+          : "Pendiente de legalizar (no suma al cuadre)",
+    };
+  };
+  const enAppSinExtracto = sobrantes
+    .map(aItem)
     .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  const pendientesPorAplicar = enAppSinExtracto.filter((i) => i.suma);
 
   const totalPendientes = pendientesPorAplicar.reduce((s, x) => s + x.valor, 0);
   const totalSinContabilizar =
     sinContabilizar.reduce((s, x) => s + x.valor, 0) +
-    sinMovimientoApp.reduce((s, x) => s + x.valor, 0);
+    sinMovimientoApp.filter((x) => x.suma).reduce((s, x) => s + x.valor, 0);
 
   const diferencia =
     libros === null || saldoPesos === null
       ? null
       : r2(libros - (saldoPesos + totalPendientes - totalSinContabilizar));
+
+  // Pistas: ¿alguna nota, pago o cargo bancario explica justo la diferencia?
+  const pistas: string[] = [];
+  if (diferencia !== null && Math.abs(diferencia) > TOL_PESOS) {
+    const cand: { etiqueta: string; valor: number }[] = [];
+    for (const i of enAppSinExtracto.filter((x) => x.grupo === "bancario"))
+      cand.push({ etiqueta: `${i.descripcion} (${i.fecha}) · en la app, no en el extracto`, valor: i.valor });
+    for (const i of sinMovimientoApp.filter((x) => !x.suma))
+      cand.push({ etiqueta: `${i.descripcion} (${i.fecha}) · en el extracto, no en la app`, valor: i.valor });
+    const sumaBanc = enAppSinExtracto
+      .filter((x) => x.grupo === "bancario")
+      .reduce((s, x) => s + Math.abs(x.valor), 0);
+    if (sumaBanc > 0) cand.push({ etiqueta: "todas las notas y pagos bancarios de la app sin extracto", valor: sumaBanc });
+    const sumaExt = sinMovimientoApp
+      .filter((x) => !x.suma)
+      .reduce((s, x) => s + Math.abs(x.valor), 0);
+    if (sumaExt > 0) cand.push({ etiqueta: "todos los cargos/abonos del extracto sin movimiento en la app", valor: sumaExt });
+    for (const c of cand) {
+      if (Math.abs(Math.abs(diferencia) - Math.abs(c.valor)) <= 1.5)
+        pistas.push(`La diferencia coincide con: ${c.etiqueta}`);
+    }
+  }
 
   if (sinMovimientoApp.length > 0)
     avisos.push(
@@ -315,6 +364,8 @@ function construir(
     saldoExtractoMoneda: saldoMoneda,
     trmCorte,
     conciliados,
+    conciliadosBancarios,
+    pistas,
     pendientesPorAplicar,
     enAppSinExtracto,
     sinContabilizar,
