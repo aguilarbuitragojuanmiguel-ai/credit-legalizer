@@ -135,7 +135,7 @@ export function conciliarCuenta(args: {
           e.fecha_corte <= finMes,
       )
       .sort((a, b) => b.fecha_corte.localeCompare(a.fecha_corte))[0] ?? null;
-  return construir(cuenta, periodo, libros, extracto, claves, movs, args.trm, avisos, finMes);
+  return construir(cuenta, periodo, libros, extracto, claves, movs, args.trm, avisos, finMes, inicioApp);
 }
 
 function construir(
@@ -148,6 +148,7 @@ function construir(
   trm: Record<string, number | null>,
   avisos: string[],
   finMes: string,
+  inicioApp: string,
 ): ResultadoCuenta {
   const vacio: ResultadoCuenta = {
     cuenta,
