@@ -22,6 +22,7 @@ import { parseDaviviendaPdf } from "@/lib/parsers/davivienda";
 import { parseBancolombiaExcel } from "@/lib/parsers/bancolombia";
 import { parseBancolombiaPdf } from "@/lib/parsers/bancolombia-pdf";
 import { parseBancoBogotaExcel } from "@/lib/parsers/bancodebogota";
+import { parseBancoBogotaPdf } from "@/lib/parsers/bancodebogota-pdf";
 import { parseLegalizacionExcel, type GastoLegalizado } from "@/lib/parsers/legalizacion";
 import { subirArchivoLegalizacion } from "@/lib/legalizacion-upload";
 import { fetchTRM } from "@/lib/trm";
@@ -223,7 +224,9 @@ function ModoSemana() {
             });
           }
         } else if (banco === "Banco de Bogotá") {
-          const res = await parseBancoBogotaExcel(file);
+          const res = /\.pdf$/i.test(file.name)
+            ? await parseBancoBogotaPdf(file)
+            : await parseBancoBogotaExcel(file);
           const tc = tcDetectado || res.tc || "";
           if (res.tc && !tcDetectado) tcDetectado = res.tc;
           if (res.filas.length === 0) errores.push(`${file.name}: sin filas legibles`);
@@ -448,7 +451,7 @@ function ModoSemana() {
           </label>
           <label className="block">
             <span className="mb-1 block text-[12px] font-medium text-muted-foreground">
-              Archivos {banco === "Davivienda" ? "PDF" : banco === "Banco de Bogotá" ? "Excel" : "Excel o PDF"} (puedes elegir varios)
+              Archivos {banco === "Davivienda" ? "PDF" : banco === "Banco de Bogotá" ? "Excel o PDF" : "Excel o PDF"} (puedes elegir varios)
             </span>
             <input
               type="file"
@@ -457,7 +460,7 @@ function ModoSemana() {
                 banco === "Davivienda"
                   ? ".pdf"
                   : banco === "Banco de Bogotá"
-                    ? ".xlsx,.xls"
+                    ? ".xlsx,.xls,.pdf"
                     : ".xlsx,.xls,.pdf"
               }
               className="text-[13px]"
