@@ -61,8 +61,12 @@ const nextKey = () => `f${++seq}`;
  *  y valor (aunque la descripción sea distinta — típico de "COMPRA" que luego carga el nombre
  *  real), lo deja marcado como posible mismo movimiento para que el usuario confirme. */
 function marcarDuplicados(filas: FilaPrev[], existentes: Movimiento[]): FilaPrev[] {
+  // El Doc de Davivienda NO es único (se repite entre meses y hasta en el mismo extracto):
+  // solo cuenta como duplicado si coincide el Doc y también el valor.
   const docs = new Set(
-    existentes.filter((m) => m.doc).map((m) => `${m.tc}|${m.doc}`),
+    existentes
+      .filter((m) => m.doc)
+      .map((m) => `${m.tc}|${m.doc}|${Math.round(Math.abs(Number(m.valor)))}`),
   );
   const conteo = new Map<string, number>();
   for (const m of existentes) {
@@ -80,7 +84,7 @@ function marcarDuplicados(filas: FilaPrev[], existentes: Movimiento[]): FilaPrev
   return filas.map((f) => {
     let duplicado = false;
     if ((f.banco === "Davivienda" || f.banco === "Banco de Bogotá") && f.doc) {
-      duplicado = docs.has(`${f.tc}|${f.doc}`);
+      duplicado = docs.has(`${f.tc}|${f.doc}|${Math.round(Math.abs(f.valor))}`);
     } else {
       const k = `${f.tc}|${f.fecha}|${Math.round(f.valor)}|${f.descripcion.trim().toUpperCase()}`;
       const restantes = conteo.get(k) ?? 0;
@@ -173,7 +177,7 @@ function ModoSemana() {
     for (const f of base) {
       const k =
         f.doc && (f.banco === "Davivienda" || f.banco === "Banco de Bogotá")
-          ? `d|${f.tc}|${f.doc}`
+          ? `d|${f.tc}|${f.doc}|${Math.round(Math.abs(f.valor))}`
           : `x|${f.tc}|${f.fecha}|${Math.round(f.valor)}|${f.descripcion.trim().toUpperCase()}`;
       if (vistos.has(k)) continue;
       vistos.add(k);
