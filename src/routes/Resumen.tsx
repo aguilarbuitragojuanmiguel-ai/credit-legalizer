@@ -122,7 +122,7 @@ function ReportePendientes({
   return (
     <Card title="Reporte de pendientes por legalizar (Excel)">
       <div className="flex flex-wrap items-center gap-2">
-        <label className="text-[13px] font-semibold">Al corte de</label>
+        <label className="text-[13px] font-semibold">Gastos hasta el mes de</label>
         <input
           type="month"
           className="rounded border border-input bg-card px-2 py-1.5 text-[13px] outline-none focus:border-ring"
@@ -130,7 +130,7 @@ function ReportePendientes({
           onChange={(e) => e.target.value && setPeriodo(e.target.value)}
         />
         <span className="text-[13px] text-muted-foreground">
-          {lista.length} pendiente{lista.length === 1 ? "" : "s"} al {finDeMesISO(periodo).split("-").reverse().join("/")} ·{" "}
+          {lista.length} pendiente{lista.length === 1 ? "" : "s"} con gastos hasta el {finDeMesISO(periodo).split("-").reverse().join("/")} ·{" "}
           <span className="font-semibold text-foreground">{formatCOP(total)}</span>
         </span>
         <button
@@ -143,9 +143,8 @@ function ReportePendientes({
         </button>
       </div>
       <p className="mt-2 text-[12px] text-muted-foreground">
-        Trae los consumos con fecha hasta ese cierre que estaban pendientes en ese momento: los que hoy
-        siguen pendientes y los que se legalizaron después del corte. Así el reporte de un mes queda fijo
-        aunque sigas legalizando.
+        Trae lo que sigue pendiente por legalizar HOY, de los gastos con fecha hasta el último día del
+        mes que elijas. Cada vez que lo descargas refleja el estado del día.
       </p>
       {error ? <p className="mt-2 text-[12px] text-destructive">{error}</p> : null}
     </Card>

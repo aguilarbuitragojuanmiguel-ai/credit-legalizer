@@ -1,4 +1,4 @@
-import { formatFecha } from "@/lib/format";
+import { formatFecha, hoyISO } from "@/lib/format";
 import { claveTC, type Movimiento } from "@/lib/movimientos";
 
 /** Último día del mes "2026-10" en ISO. */
@@ -8,22 +8,13 @@ export function finDeMesISO(periodo: string): string {
 }
 
 /**
- * Consumos que estaban PENDIENTES por legalizar al cierre de un mes:
- * fecha del gasto ≤ fin de mes y (hoy siguen Pendientes, o se legalizaron / marcaron
- * después de ese cierre). Si un movimiento ya legalizado no trae fecha de legalización,
- * se asume que se legalizó antes del corte.
+ * Consumos que SIGUEN pendientes por legalizar hoy, con fecha de gasto hasta el fin
+ * del mes elegido (el estado es el de hoy, no el de aquel cierre).
  */
 export function pendientesAlCorte(movs: Movimiento[], periodo: string): Movimiento[] {
   const corte = finDeMesISO(periodo);
   return movs
-    .filter((m) => {
-      if (m.tipo !== "Consumo") return false;
-      if (m.fecha > corte) return false;
-      if (m.estado === "Pendiente") return true;
-      if (m.estado === "Legalizado" || m.estado === "No deducible")
-        return !!m.fecha_legalizacion && m.fecha_legalizacion > corte;
-      return false;
-    })
+    .filter((m) => m.tipo === "Consumo" && m.estado === "Pendiente" && m.fecha <= corte)
     .sort((a, b) => a.tc.localeCompare(b.tc) || a.fecha.localeCompare(b.fecha));
 }
 
@@ -37,6 +28,7 @@ export async function exportarPendientesExcel(
 ) {
   const XLSX = await import("xlsx");
   const corte = finDeMesISO(periodo);
+  const hoy = hoyISO();
   const lista = pendientesAlCorte(movs, periodo);
 
   const porTC = new Map<string, { banco: string; n: number; v: number; vieja: string }>();
@@ -49,9 +41,9 @@ export async function exportarPendientesExcel(
   }
 
   const resumen: (string | number)[][] = [
-    [`PENDIENTES POR LEGALIZAR AL CORTE ${formatFecha(corte)}`],
+    [`PENDIENTES POR LEGALIZAR CON GASTOS HASTA ${formatFecha(corte)} (estado al ${formatFecha(hoy)})`],
     [],
-    ["TC", "Banco", "Responsable", "# Pendientes", "Valor pendiente", "Gasto más antiguo", "Días del más antiguo"],
+    ["TC", "Banco", "Responsable", "# Pendientes", "Valor pendiente", "Gasto más antiguo", "Días de antigüedad (a hoy)"],
     ...[...porTC.entries()].map(([tc, f]) => [
       tc,
       f.banco,
@@ -59,7 +51,7 @@ export async function exportarPendientesExcel(
       f.n,
       Math.round(f.v),
       formatFecha(f.vieja),
-      dias(f.vieja, corte),
+      dias(f.vieja, hoy),
     ]),
     [
       "TOTAL",
@@ -84,9 +76,7 @@ export async function exportarPendientesExcel(
       "Moneda extracto",
       "Valor original",
       "TRM",
-      "Días al corte",
-      "Estado hoy",
-      "Fecha legalización",
+      "Días de antigüedad (a hoy)",
     ],
     ...lista.map((m) => [
       m.tc,
@@ -99,9 +89,7 @@ export async function exportarPendientesExcel(
       m.moneda || "COP",
       m.valor_original ?? "",
       m.trm ?? "",
-      dias(m.fecha, corte),
-      m.estado,
-      m.fecha_legalizacion ? formatFecha(m.fecha_legalizacion) : "",
+      dias(m.fecha, hoy),
     ]),
   ];
 
@@ -109,9 +97,9 @@ export async function exportarPendientesExcel(
   const h1 = XLSX.utils.aoa_to_sheet(resumen);
   h1["!cols"] = [{ wch: 10 }, { wch: 14 }, { wch: 20 }, { wch: 13 }, { wch: 16 }, { wch: 18 }, { wch: 20 }];
   const h2 = XLSX.utils.aoa_to_sheet(detalle);
-  h2["!cols"] = [{ wch: 8 }, { wch: 13 }, { wch: 18 }, { wch: 12 }, { wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 15 }, { wch: 14 }, { wch: 10 }, { wch: 12 }, { wch: 14 }, { wch: 18 }];
+  h2["!cols"] = [{ wch: 8 }, { wch: 13 }, { wch: 18 }, { wch: 12 }, { wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 15 }, { wch: 14 }, { wch: 10 }, { wch: 14 }];
   XLSX.utils.book_append_sheet(wb, h1, "Resumen");
   XLSX.utils.book_append_sheet(wb, h2, "Detalle");
-  XLSX.writeFile(wb, `pendientes_por_legalizar_${periodo}.xlsx`);
+  XLSX.writeFile(wb, `pendientes_por_legalizar_hasta_${periodo}.xlsx`);
   return lista.length;
 }
