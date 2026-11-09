@@ -3,6 +3,7 @@ import { useState } from "react";
 
 import { AppShell, Card } from "@/components/AppShell";
 import { formatCOP } from "@/lib/format";
+import { exportarPendientesExcel, finDeMesISO, pendientesAlCorte } from "@/lib/reporte-pendientes";
 import {
   claveTC,
   guardarResponsable,
@@ -86,6 +87,68 @@ function ResponsableInput({ tc, valor }: { tc: string; valor: string }) {
         if (e.key === "Enter") e.currentTarget.blur();
       }}
     />
+  );
+}
+
+function mesAnteriorISO(): string {
+  const d = new Date();
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function ReportePendientes({
+  movs,
+  responsables,
+}: {
+  movs: Movimiento[];
+  responsables: Record<string, string>;
+}) {
+  const [periodo, setPeriodo] = useState(mesAnteriorISO());
+  const [error, setError] = useState<string | null>(null);
+  const [generando, setGenerando] = useState(false);
+  const lista = pendientesAlCorte(movs, periodo);
+  const total = lista.reduce((s, m) => s + Number(m.valor), 0);
+  const descargar = async () => {
+    setError(null);
+    setGenerando(true);
+    try {
+      await exportarPendientesExcel(movs, periodo, responsables);
+    } catch {
+      setError("No se pudo generar el Excel. Intenta de nuevo.");
+    } finally {
+      setGenerando(false);
+    }
+  };
+  return (
+    <Card title="Reporte de pendientes por legalizar (Excel)">
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="text-[13px] font-semibold">Al corte de</label>
+        <input
+          type="month"
+          className="rounded border border-input bg-card px-2 py-1.5 text-[13px] outline-none focus:border-ring"
+          value={periodo}
+          onChange={(e) => e.target.value && setPeriodo(e.target.value)}
+        />
+        <span className="text-[13px] text-muted-foreground">
+          {lista.length} pendiente{lista.length === 1 ? "" : "s"} al {finDeMesISO(periodo).split("-").reverse().join("/")} ·{" "}
+          <span className="font-semibold text-foreground">{formatCOP(total)}</span>
+        </span>
+        <button
+          type="button"
+          disabled={generando || lista.length === 0}
+          onClick={() => void descargar()}
+          className="rounded bg-primary px-3 py-1.5 text-[13px] font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
+        >
+          {generando ? "Generando…" : "Descargar Excel"}
+        </button>
+      </div>
+      <p className="mt-2 text-[12px] text-muted-foreground">
+        Trae los consumos con fecha hasta ese cierre que estaban pendientes en ese momento: los que hoy
+        siguen pendientes y los que se legalizaron después del corte. Así el reporte de un mes queda fijo
+        aunque sigas legalizando.
+      </p>
+      {error ? <p className="mt-2 text-[12px] text-destructive">{error}</p> : null}
+    </Card>
   );
 }
 
@@ -187,6 +250,9 @@ export default function Resumen() {
             </div>
           )}
         </Card>
+      </div>
+      <div className="mt-5">
+        <ReportePendientes movs={movs} responsables={responsables} />
       </div>
     </AppShell>
   );
