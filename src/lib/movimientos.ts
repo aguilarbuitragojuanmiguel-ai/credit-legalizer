@@ -38,16 +38,27 @@ export type NuevoMovimiento = {
   trm?: number | null;
 };
 
+const PAGINA = 1000;
+
 export const movimientosQuery = {
   queryKey: ["movimientos"] as const,
   queryFn: async (): Promise<Movimiento[]> => {
-    const { data, error } = await supabase
-      .from("movimientos")
-      .select("*")
-      .order("fecha", { ascending: false })
-      .order("created_at", { ascending: false });
-    if (error) throw error;
-    return (data ?? []) as unknown as Movimiento[];
+    // Supabase entrega máximo 1000 filas por consulta: se pide por páginas hasta traer todo.
+    const todos: Movimiento[] = [];
+    for (let desde = 0; ; desde += PAGINA) {
+      const { data, error } = await supabase
+        .from("movimientos")
+        .select("*")
+        .order("fecha", { ascending: false })
+        .order("created_at", { ascending: false })
+        .order("id", { ascending: true })
+        .range(desde, desde + PAGINA - 1);
+      if (error) throw error;
+      const lote = (data ?? []) as unknown as Movimiento[];
+      todos.push(...lote);
+      if (lote.length < PAGINA) break;
+    }
+    return todos;
   },
 };
 
