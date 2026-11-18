@@ -102,6 +102,42 @@ function nombreHoja(txt: string, usados: Set<string>): string {
   return n;
 }
 
+type FilaUnida = Fila & { archivo: string; banco: string };
+
+/**
+ * Junta todos los archivos en una sola lista. Si dos PDF se traslapan (semanas que repiten
+ * días), el mismo movimiento no se cuenta dos veces: de cada movimiento idéntico se conserva
+ * la mayor cantidad que trae UN solo archivo, así las compras iguales del mismo día se respetan.
+ */
+export function unir(leidos: Leido[]): { filas: FilaUnida[]; repetidos: number } {
+  const clave = (tc: string, f: Fila) =>
+    [tc, f.fecha, f.doc, f.descripcion.toUpperCase(), f.valor.toFixed(2), f.moneda].join("|");
+  const maxPorClave = new Map<string, number>();
+  for (const l of leidos) {
+    const conteo = new Map<string, number>();
+    for (const f of l.filas) {
+      const k = clave(f.tc || l.tc, f);
+      conteo.set(k, (conteo.get(k) ?? 0) + 1);
+    }
+    for (const [k, n] of conteo) maxPorClave.set(k, Math.max(maxPorClave.get(k) ?? 0, n));
+  }
+  const usados = new Map<string, number>();
+  const filas: FilaUnida[] = [];
+  let total = 0;
+  for (const l of leidos) {
+    for (const f of l.filas) {
+      total += 1;
+      const k = clave(f.tc || l.tc, f);
+      const n = usados.get(k) ?? 0;
+      if (n >= (maxPorClave.get(k) ?? 0)) continue;
+      usados.set(k, n + 1);
+      filas.push({ ...f, tc: f.tc || l.tc, archivo: l.archivo, banco: l.banco });
+    }
+  }
+  filas.sort((a, b) => a.tc.localeCompare(b.tc) || a.fecha.localeCompare(b.fecha));
+  return { filas, repetidos: total - filas.length };
+}
+
 /** Fecha ISO -> número de serie de Excel (solo fecha, sin hora) */
 function serialExcel(iso: string): number {
   return Math.round((Date.parse(`${iso}T00:00:00Z`) - Date.UTC(1899, 11, 30)) / 86400000);
@@ -110,10 +146,10 @@ function serialExcel(iso: string): number {
 export async function descargar(leidos: Leido[]) {
   const XLSX = await import("xlsx");
   const cab = ["Archivo", "Banco", "TC", "Fecha", "Doc", "Descripción", "Valor", "Moneda", "Tipo"];
-  const aFila = (l: Leido, f: Fila) => [
-    l.archivo,
-    l.banco,
-    f.tc || l.tc,
+  const aFila = (f: FilaUnida) => [
+    f.archivo,
+    f.banco,
+    f.tc,
     serialExcel(f.fecha),
     f.doc,
     f.descripcion,
@@ -138,15 +174,14 @@ export async function descargar(leidos: Leido[]) {
 
   const wb = XLSX.utils.book_new();
   const usados = new Set<string>();
-  const todas = leidos.flatMap((l) => l.filas.map((f) => aFila(l, f)));
-  XLSX.utils.book_append_sheet(wb, hoja(todas), nombreHoja("Movimientos", usados));
-  if (leidos.length > 1) {
-    for (const l of leidos) {
-      XLSX.utils.book_append_sheet(
-        wb,
-        hoja(l.filas.map((f) => aFila(l, f))),
-        nombreHoja(`${l.banco} ${l.tc || l.archivo}`, usados),
-      );
+  const { filas } = unir(leidos);
+  XLSX.utils.book_append_sheet(wb, hoja(filas.map(aFila)), nombreHoja("Movimientos", usados));
+  // Una hoja por tarjeta cuando hay más de una
+  const porTC = new Map<string, FilaUnida[]>();
+  for (const f of filas) porTC.set(`${f.banco} ${f.tc}`, [...(porTC.get(`${f.banco} ${f.tc}`) ?? []), f]);
+  if (porTC.size > 1) {
+    for (const [nombreTC, lista] of porTC) {
+      XLSX.utils.book_append_sheet(wb, hoja(lista.map(aFila)), nombreHoja(nombreTC, usados));
     }
   }
   const nombre =
@@ -176,20 +211,21 @@ export default function PdfAExcel() {
         fallos.push(`${f.name}: no se pudo leer el PDF`);
       }
     }
-    setLeidos(out);
+    setLeidos((prev) => [...prev.filter((p) => !out.some((o) => o.archivo === p.archivo)), ...out]);
     setError(fallos.length ? fallos.join(" · ") : null);
     setLeyendo(false);
   };
 
-  const total = leidos.reduce((s, l) => s + l.filas.length, 0);
+  const unido = unir(leidos);
+  const total = unido.filas.length;
 
   return (
     <AppShell>
       <h1 className="mb-4 text-[18px] font-semibold tracking-tight">PDF a Excel</h1>
       <Card title="Convierte los movimientos de un PDF del banco en Excel">
         <p className="mb-3 text-[13px] text-muted-foreground">
-          Sube el PDF de movimientos (Bancolombia, Davivienda o Banco de Bogotá) y descarga un Excel con
-          la fecha, descripción, valor y tipo. Es solo conversión: no guarda nada en la app.
+          Sube uno o varios PDF de movimientos (Bancolombia, Davivienda o Banco de Bogotá; puedes agregar
+          más en varias tandas) y descarga un solo Excel con la fecha, descripción, valor y tipo. Es solo conversión: no guarda nada en la app.
         </p>
         <div className="flex flex-wrap items-center gap-3">
           <select
@@ -220,13 +256,31 @@ export default function PdfAExcel() {
       {leidos.length > 0 ? (
         <div className="mt-5">
           <Card title={`${total} movimiento${total === 1 ? "" : "s"} leído${total === 1 ? "" : "s"}`}>
-            <button
-              type="button"
-              onClick={() => void descargar(leidos)}
-              className="mb-4 rounded bg-primary px-3 py-1.5 text-[13px] font-semibold text-primary-foreground"
-            >
-              Descargar Excel
-            </button>
+            <div className="mb-4 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={() => void descargar(leidos)}
+                className="rounded bg-primary px-3 py-1.5 text-[13px] font-semibold text-primary-foreground"
+              >
+                Descargar Excel (todos los archivos juntos)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLeidos([]);
+                  setError(null);
+                }}
+                className="rounded border border-input bg-card px-3 py-1.5 text-[13px] font-semibold"
+              >
+                Limpiar
+              </button>
+              <span className="text-[12px] text-muted-foreground">
+                {leidos.length} archivo{leidos.length === 1 ? "" : "s"}
+                {unido.repetidos > 0
+                  ? ` · ${unido.repetidos} movimiento${unido.repetidos === 1 ? "" : "s"} repetido${unido.repetidos === 1 ? "" : "s"} entre archivos (no se duplican)`
+                  : ""}
+              </span>
+            </div>
             {leidos.map((l) => (
               <div key={l.archivo} className="mb-5">
                 <p className="mb-1 text-[12px] font-semibold text-muted-foreground">
