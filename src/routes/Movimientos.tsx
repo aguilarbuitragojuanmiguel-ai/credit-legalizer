@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useMemo, useState } from "react";
+import { generarReembolso, capacidad, type Empresa } from "@/lib/reembolso";
 
 import { AppShell, Card, EstadoPill } from "@/components/AppShell";
 import { formatCOP, formatFecha, hoyISO, type ClasificacionFiscal, type Tipo } from "@/lib/format";
@@ -118,6 +119,41 @@ export default function Movimientos() {
 
   const idsSeleccionados = Object.keys(seleccion).filter((id) => seleccion[id]);
   const seleccionables = filtrados.filter((m) => m.tipo === "Consumo" && m.estado === "Pendiente");
+  const paraReembolso = tcFiltro
+    ? filtrados.filter(
+        (m) => m.tipo === "Consumo" && m.estado === "Pendiente" && m.soporte_listo === true,
+      )
+    : [];
+  const totalReembolso = paraReembolso.reduce((s, m) => s + Number(m.valor), 0);
+  const [reembolsoOpen, setReembolsoOpen] = useState(false);
+  const [reembolsoBusy, setReembolsoBusy] = useState(false);
+  const [reembolsoErr, setReembolsoErr] = useState("");
+
+  async function hacerReembolso(empresa: Empresa) {
+    setReembolsoBusy(true);
+    setReembolsoErr("");
+    try {
+      const blob = await generarReembolso(
+        empresa,
+        paraReembolso.map((m) => ({
+          fecha: m.fecha,
+          descripcion: m.descripcion ?? "",
+          valor: Number(m.valor),
+        })),
+      );
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `REEMBOLSO_${empresa}_TC_${tcFiltro}_${hoyISO()}.xlsx`;
+      a.click();
+      URL.revokeObjectURL(url);
+      setReembolsoOpen(false);
+    } catch (e) {
+      setReembolsoErr(e instanceof Error ? e.message : String(e));
+    } finally {
+      setReembolsoBusy(false);
+    }
+  }
 
   return (
     <AppShell>
@@ -194,6 +230,42 @@ export default function Movimientos() {
             onChange={(e) => setBusqueda(e.target.value)}
           />
         </div>
+        {tcFiltro && (
+          <div className="mb-4 flex flex-wrap items-center gap-3 rounded border border-border bg-muted/40 px-3 py-2 text-[13px]">
+            <span>
+              Con soporte listo (pendientes): <b>{paraReembolso.length}</b> · {formatCOP(totalReembolso)}
+            </span>
+            {!reembolsoOpen ? (
+              <button
+                type="button"
+                disabled={paraReembolso.length === 0}
+                onClick={() => setReembolsoOpen(true)}
+                className="rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground disabled:cursor-not-allowed disabled:opacity-40"
+              >
+                Generar reembolso
+              </button>
+            ) : (
+              <span className="flex items-center gap-2">
+                ¿Para cuál empresa?
+                {(["SPL", "SPI"] as Empresa[]).map((e) => (
+                  <button
+                    key={e}
+                    type="button"
+                    disabled={reembolsoBusy || paraReembolso.length > capacidad(e)}
+                    onClick={() => hacerReembolso(e)}
+                    className="rounded bg-primary px-3 py-1.5 font-semibold text-primary-foreground disabled:opacity-40"
+                  >
+                    {reembolsoBusy ? "…" : e}
+                  </button>
+                ))}
+                <button type="button" onClick={() => setReembolsoOpen(false)} className="underline">
+                  Cancelar
+                </button>
+              </span>
+            )}
+            {reembolsoErr && <span className="text-destructive">{reembolsoErr}</span>}
+          </div>
+        )}
         <p className="mb-4 text-[13px] text-muted-foreground">
           {filtrados.length} movimiento{filtrados.length === 1 ? "" : "s"} · Total:{" "}
           <span className="font-semibold text-foreground">{formatCOP(totalFiltrado)}</span>
