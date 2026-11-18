@@ -49,9 +49,9 @@ const reFilaFecha = new RegExp(
   String.raw`^(${FECHA_ES})\s+(?:--|${FECHA_ES})\s*(.*)$`,
   "i",
 );
-const reMonto = /(COP|USD)\s*\$\s*(-?[\d.,\s]+)$/i;
-const reMontoSolo = /^(COP|USD)\s*\$\s*(-?[\d.,\s]+)$/i;
-const rePlazo = /(-?\d{1,3})\s*$/;
+const reMonto = /(COP|USD)\s*(-?)\s*\$\s*(-?[\d.,\s]+)$/i;
+const reMontoSolo = /^(COP|USD)\s*(-?)\s*\$\s*(-?[\d.,\s]+)$/i;
+const rePlazo = /(?:^|\s)(-?\d{1,3}|-)\s*$/;
 
 /** El PDF de la Sucursal Virtual parte una misma transacción en varias líneas:
  *  la descripción se envuelve y a veces el valor queda en una línea aparte. */
@@ -127,7 +127,8 @@ export async function parseBancolombiaPdf(file: File): Promise<ResultadoBancolom
       const mMonto = resto.match(reMonto);
       if (mMonto) {
         moneda = (mMonto[1] ?? "").toUpperCase() === "USD" ? "USD" : "COP";
-        valor = parseCOP(limpiarNumero(mMonto[2] ?? "0"));
+        valor = parseCOP(limpiarNumero(mMonto[3] ?? "0"));
+        if (mMonto[2] === "-" && valor > 0) valor = -valor;
         resto = resto.slice(0, mMonto.index).trim();
       } else if (bufferMonto) {
         valor = bufferMonto.valor;
@@ -158,7 +159,7 @@ export async function parseBancolombiaPdf(file: File): Promise<ResultadoBancolom
     if (mSolo) {
       bufferMonto = {
         moneda: (mSolo[1] ?? "").toUpperCase() === "USD" ? "USD" : "COP",
-        valor: parseCOP(limpiarNumero(mSolo[2] ?? "0")),
+        valor: (mSolo[2] === "-" ? -1 : 1) * Math.abs(parseCOP(limpiarNumero(mSolo[3] ?? "0"))),
       };
       continue;
     }
