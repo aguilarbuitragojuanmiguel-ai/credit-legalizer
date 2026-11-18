@@ -5,6 +5,7 @@ import Movimientos from "./routes/Movimientos";
 import Subir from "./routes/Subir";
 import Fiscal from "./routes/Fiscal";
 import Conciliacion from "./routes/Conciliacion";
+import PdfAExcel from "./routes/PdfAExcel";
 
 const rootRoute = createRootRoute({
   component: () => <Outlet />,
@@ -54,12 +55,19 @@ const conciliacionRoute = createRoute({
   component: Conciliacion,
 });
 
+const pdfExcelRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/pdf-a-excel",
+  component: PdfAExcel,
+});
+
 const routeTree = rootRoute.addChildren([
   resumenRoute,
   movimientosRoute,
   subirRoute,
   fiscalRoute,
   conciliacionRoute,
+  pdfExcelRoute,
 ]);
 
 export const router = createRouter({ routeTree });

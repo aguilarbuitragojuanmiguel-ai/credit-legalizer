@@ -9,6 +9,7 @@ const nav = [
   { to: "/subir", label: "Subir soporte" },
   { to: "/fiscal", label: "Fiscal" },
   { to: "/conciliacion", label: "Conciliación" },
+  { to: "/pdf-a-excel", label: "PDF a Excel" },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
